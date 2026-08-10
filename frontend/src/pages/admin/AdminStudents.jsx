@@ -11,8 +11,12 @@ import {
   Sparkles,
   Zap,
   X,
+<<<<<<< HEAD
   Check,
   Trash2
+=======
+  Check
+>>>>>>> cf753f4ff6dbdee6aac03d8225071450ced49492
 } from 'lucide-react';
 import CredentialCardModal from '../../components/CredentialCardModal';
 
@@ -219,6 +223,7 @@ export default function AdminStudents() {
     }
   };
 
+<<<<<<< HEAD
   const [deleteTargetStudent, setDeleteTargetStudent] = useState(null);
   const [deletingStudent, setDeletingStudent] = useState(false);
 
@@ -238,6 +243,8 @@ export default function AdminStudents() {
     }
   };
 
+=======
+>>>>>>> cf753f4ff6dbdee6aac03d8225071450ced49492
   const handleStatusToggle = async (st, newStatus) => {
     const actionName = newStatus === 'ACTIVE' ? 'Reactivate' : 'Deactivate / Suspend';
     if (!window.confirm(`${actionName} account for ${st.name}? (Attendance records will remain preserved)`)) return;
@@ -464,6 +471,7 @@ export default function AdminStudents() {
                             <UserCheck className="w-3.5 h-3.5" />
                           </button>
                         )}
+<<<<<<< HEAD
                         <button
                           onClick={() => setDeleteTargetStudent(st)}
                           title="Delete Student Profile"
@@ -472,6 +480,8 @@ export default function AdminStudents() {
                           <Trash2 className="w-3.5 h-3.5" />
                           <span>Delete</span>
                         </button>
+=======
+>>>>>>> cf753f4ff6dbdee6aac03d8225071450ced49492
                       </div>
                     </td>
                   </tr>
@@ -861,6 +871,7 @@ export default function AdminStudents() {
         </div>
       )}
 
+<<<<<<< HEAD
       {/* Delete Student Confirmation Modal */}
       {deleteTargetStudent && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
@@ -916,6 +927,8 @@ export default function AdminStudents() {
         </div>
       )}
 
+=======
+>>>>>>> cf753f4ff6dbdee6aac03d8225071450ced49492
       {/* Credential Card Display Modal */}
       {createdCredentials && (
         <CredentialCardModal

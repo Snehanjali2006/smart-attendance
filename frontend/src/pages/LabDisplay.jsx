@@ -7,9 +7,14 @@ export default function LabDisplay() {
   const { socket } = useSocket();
   const [activeSession, setActiveSession] = useState(null);
   const [qrToken, setQrToken] = useState('');
+<<<<<<< HEAD
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState('');
   const [code, setCode] = useState(47);
   const [secondsRemaining, setSecondsRemaining] = useState(180);
+=======
+  const [code, setCode] = useState(47);
+  const [secondsRemaining, setSecondsRemaining] = useState(60);
+>>>>>>> cf753f4ff6dbdee6aac03d8225071450ced49492
   const [presentCount, setPresentCount] = useState(87);
   const [totalStudents, setTotalStudents] = useState(120);
   const [labName, setLabName] = useState('IdeaLab Hall - 1');
@@ -33,7 +38,10 @@ export default function LabDisplay() {
         const s = res.session;
         setActiveSession(s);
         setQrToken(s.token);
+<<<<<<< HEAD
         setQrCodeDataUrl(res.qrCode || s.qrCode || '');
+=======
+>>>>>>> cf753f4ff6dbdee6aac03d8225071450ced49492
         setCode(s.code || 47);
         setPresentCount(s.presentCount || 0);
         setTotalStudents(s.totalStudents || 120);
@@ -63,9 +71,14 @@ export default function LabDisplay() {
 
     const handleQrUpdate = (data) => {
       setQrToken(data.token);
+<<<<<<< HEAD
       setQrCodeDataUrl(data.qrCode || '');
       setCode(data.code);
       setSecondsRemaining(180);
+=======
+      setCode(data.code);
+      setSecondsRemaining(60);
+>>>>>>> cf753f4ff6dbdee6aac03d8225071450ced49492
       setPresentCount(data.presentCount);
       setTotalStudents(data.totalStudents);
       setLabName(data.labName);
@@ -79,7 +92,10 @@ export default function LabDisplay() {
       if (data) {
         setActiveSession(data);
         setQrToken(data.token);
+<<<<<<< HEAD
         setQrCodeDataUrl(data.qrCode || '');
+=======
+>>>>>>> cf753f4ff6dbdee6aac03d8225071450ced49492
         setCode(data.code);
         setPresentCount(data.presentCount);
         setTotalStudents(data.totalStudents);
@@ -103,7 +119,11 @@ export default function LabDisplay() {
   // Countdown timer effect
   useEffect(() => {
     const timer = setInterval(() => {
+<<<<<<< HEAD
       setSecondsRemaining((prev) => (prev > 0 ? prev - 1 : 0));
+=======
+      setSecondsRemaining((prev) => (prev > 0 ? prev - 1 : 60));
+>>>>>>> cf753f4ff6dbdee6aac03d8225071450ced49492
     }, 1000);
     return () => clearInterval(timer);
   }, []);
@@ -151,6 +171,12 @@ export default function LabDisplay() {
   };
 
   const scanUrl = getMobileQrScanUrl();
+<<<<<<< HEAD
+=======
+  const qrImageUrl = activeSession
+    ? `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(scanUrl)}&color=0b0f19&bgcolor=ffffff`
+    : '';
+>>>>>>> cf753f4ff6dbdee6aac03d8225071450ced49492
 
   if (loading) {
     return (
@@ -219,9 +245,15 @@ export default function LabDisplay() {
                 {String(code).padStart(2, '0')}
               </div>
               <div className="mt-6 pt-6 border-t border-white/10 flex items-center justify-between">
+<<<<<<< HEAD
                 <span className="text-xs text-gray-400 font-mono">{secondsRemaining > 0 ? 'QR valid for:' : 'Status:'}</span>
                 <span className={`text-xl font-bold font-mono px-3 py-1 rounded-lg border ${secondsRemaining > 0 ? 'text-cyan-400 bg-cyan-950/40 border-cyan-500/30' : 'text-red-400 bg-red-950/40 border-red-500/30'}`}>
                   {secondsRemaining > 0 ? `${String(Math.floor(secondsRemaining / 60)).padStart(2, '0')}:${String(secondsRemaining % 60).padStart(2, '0')}` : 'QR EXPIRED'}
+=======
+                <span className="text-xs text-gray-400 font-mono">Code changes in:</span>
+                <span className="text-xl font-bold font-mono text-cyan-400 bg-cyan-950/40 px-3 py-1 rounded-lg border border-cyan-500/30">
+                  00:{String(secondsRemaining).padStart(2, '0')}
+>>>>>>> cf753f4ff6dbdee6aac03d8225071450ced49492
                 </span>
               </div>
             </div>
@@ -258,6 +290,7 @@ export default function LabDisplay() {
               </span>
 
               {/* QR Container */}
+<<<<<<< HEAD
               <div className="p-4 bg-white rounded-2xl shadow-2xl border-4 border-violet-500/50 mb-4 group hover:scale-[1.02] transition-transform flex items-center justify-center min-h-[256px] min-w-[256px]">
                 {qrCodeDataUrl ? (
                   <img
@@ -270,6 +303,14 @@ export default function LabDisplay() {
                     Unable to generate QR code.
                   </div>
                 )}
+=======
+              <div className="p-4 bg-white rounded-2xl shadow-2xl border-4 border-violet-500/50 mb-4 group hover:scale-[1.02] transition-transform">
+                <img
+                  src={qrImageUrl}
+                  alt="Attendance Session QR"
+                  className="w-64 h-64 lg:w-80 lg:h-80 object-contain rounded-lg"
+                />
+>>>>>>> cf753f4ff6dbdee6aac03d8225071450ced49492
               </div>
 
               <p className="text-xs text-gray-400 font-mono mb-2 break-all max-w-sm">

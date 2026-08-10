@@ -1,7 +1,10 @@
 const crypto = require('crypto');
 const db = require('../config/database');
 const { getAppBaseUrl } = require('../utils/networkUtils');
+<<<<<<< HEAD
 const QRCode = require('qrcode');
+=======
+>>>>>>> cf753f4ff6dbdee6aac03d8225071450ced49492
 
 const activeTimers = new Map(); // session_id -> setInterval handle
 
@@ -18,7 +21,11 @@ function startQrRotation(io, sessionId) {
     clearInterval(activeTimers.get(sessionId));
   }
 
+<<<<<<< HEAD
   const rotateToken = async () => {
+=======
+  const rotateToken = () => {
+>>>>>>> cf753f4ff6dbdee6aac03d8225071450ced49492
     try {
       const session = db.prepare('SELECT * FROM attendance_sessions WHERE session_id = ?').get(sessionId);
       if (!session || session.status !== 'ACTIVE') {
@@ -31,7 +38,11 @@ function startQrRotation(io, sessionId) {
 
       const newToken = generateSecureToken();
       const newCode = generateRandomCode();
+<<<<<<< HEAD
       const expirationTime = new Date(Date.now() + 180 * 1000).toISOString();
+=======
+      const expirationTime = new Date(Date.now() + 60 * 1000).toISOString();
+>>>>>>> cf753f4ff6dbdee6aac03d8225071450ced49492
 
       db.prepare(`
         UPDATE attendance_sessions
@@ -47,13 +58,20 @@ function startQrRotation(io, sessionId) {
 
       const baseUrl = getAppBaseUrl();
       const qrScanUrl = `${baseUrl}/attendance/verify?session=${sessionId}&token=${newToken}`;
+<<<<<<< HEAD
       const qrCode = await QRCode.toDataURL(qrScanUrl);
+=======
+>>>>>>> cf753f4ff6dbdee6aac03d8225071450ced49492
 
       const payload = {
         sessionId,
         token: newToken,
         code: newCode,
+<<<<<<< HEAD
         expiresInSeconds: 180,
+=======
+        expiresInSeconds: 60,
+>>>>>>> cf753f4ff6dbdee6aac03d8225071450ced49492
         expiresAt: expirationTime,
         labName: lab ? lab.lab_name : 'IdeaLab',
         totalStudents: session.total_eligible || 120,
@@ -62,8 +80,12 @@ function startQrRotation(io, sessionId) {
         startTime: session.start_time,
         batch: session.batch,
         appBaseUrl: baseUrl,
+<<<<<<< HEAD
         qrScanUrl,
         qrCode
+=======
+        qrScanUrl
+>>>>>>> cf753f4ff6dbdee6aac03d8225071450ced49492
       };
 
       // Broadcast new QR token to lab displays and teacher dashboards
@@ -78,8 +100,13 @@ function startQrRotation(io, sessionId) {
   // Immediate initial rotation
   rotateToken();
 
+<<<<<<< HEAD
   // Schedule timer every 180 seconds
   const timer = setInterval(rotateToken, 180 * 1000);
+=======
+  // Schedule timer every 60 seconds
+  const timer = setInterval(rotateToken, 60 * 1000);
+>>>>>>> cf753f4ff6dbdee6aac03d8225071450ced49492
   activeTimers.set(sessionId, timer);
 }
 

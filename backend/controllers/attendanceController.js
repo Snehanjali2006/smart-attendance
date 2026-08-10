@@ -64,7 +64,11 @@ exports.verifyAndMarkAttendance = (req, res) => {
         return res.status(400).json({
           success: false,
           errorCode: 'EXPIRED_TOKEN',
+<<<<<<< HEAD
           message: 'QR code has expired. Please scan the new QR code.'
+=======
+          message: 'This QR code is no longer valid. Please scan the new QR code displayed on the IdeaLab screen.'
+>>>>>>> cf753f4ff6dbdee6aac03d8225071450ced49492
         });
       }
     }

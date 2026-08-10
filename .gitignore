@@ -1,6 +1,13 @@
+<<<<<<< HEAD
 node_modules/
 frontend/node_modules/
 backend/data/*.db-wal
 backend/data/*.db-shm
 frontend/dist/
 backend/.env
+=======
+node_modules/  
+frontend/node_modules/  
+backend/data/*.db-wal  
+backend/data/*.db-shm 
+>>>>>>> cf753f4ff6dbdee6aac03d8225071450ced49492

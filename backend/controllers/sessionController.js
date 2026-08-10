@@ -1,9 +1,14 @@
 const db = require('../config/database');
 const { startQrRotation, stopQrRotation, generateSecureToken, generateRandomCode } = require('../services/qrSessionManager');
 const { getAppBaseUrl, getLanIpAddress } = require('../utils/networkUtils');
+<<<<<<< HEAD
 const QRCode = require('qrcode');
 
 exports.startSession = async (req, res) => {
+=======
+
+exports.startSession = (req, res) => {
+>>>>>>> cf753f4ff6dbdee6aac03d8225071450ced49492
   try {
     const { labId, courseId, batch, date, startTime, endTime } = req.body;
     const teacherId = req.user.id;
@@ -18,9 +23,15 @@ exports.startSession = async (req, res) => {
     }
 
     // Stop any existing ACTIVE session for this lab
+<<<<<<< HEAD
     const existingActive = db.prepare(`SELECT session_id FROM attendance_sessions WHERE lab_id = ? AND status = 'ACTIVE'`).all(labId);
     existingActive.forEach((s) => {
       db.prepare(`UPDATE attendance_sessions SET status = 'COMPLETED' WHERE session_id = ?`).run(s.session_id);
+=======
+    const existingActive = db.prepare('SELECT session_id FROM attendance_sessions WHERE lab_id = ? AND status = "ACTIVE"').all(labId);
+    existingActive.forEach((s) => {
+      db.prepare('UPDATE attendance_sessions SET status = "COMPLETED" WHERE session_id = ?').run(s.session_id);
+>>>>>>> cf753f4ff6dbdee6aac03d8225071450ced49492
       stopQrRotation(s.session_id);
     });
 
@@ -28,9 +39,14 @@ exports.startSession = async (req, res) => {
     const sessionId = `ILAB-${timestamp}`;
     const token = generateSecureToken();
     const code = generateRandomCode();
+<<<<<<< HEAD
     const expiresAt = new Date(Date.now() + 180 * 1000).toISOString();
     const istNow = new Date().toLocaleString('en-CA', { timeZone: 'Asia/Kolkata' }); // format YYYY-MM-DD
     const currentDate = date || istNow.split(' ')[0];
+=======
+    const expiresAt = new Date(Date.now() + 60 * 1000).toISOString();
+    const currentDate = date || new Date().toISOString().split('T')[0];
+>>>>>>> cf753f4ff6dbdee6aac03d8225071450ced49492
     const currentStartTime = startTime || '10:00 AM';
     const currentEndTime = endTime || '11:30 AM';
 
@@ -58,13 +74,19 @@ exports.startSession = async (req, res) => {
 
     const baseUrl = getAppBaseUrl();
     const qrScanUrl = `${baseUrl}/attendance/verify?session=${sessionId}&token=${token}`;
+<<<<<<< HEAD
     const qrCode = await QRCode.toDataURL(qrScanUrl);
+=======
+>>>>>>> cf753f4ff6dbdee6aac03d8225071450ced49492
 
     res.json({
       success: true,
       message: 'Attendance Session Started Successfully',
+<<<<<<< HEAD
       qrCode,
       qrUrl: qrScanUrl,
+=======
+>>>>>>> cf753f4ff6dbdee6aac03d8225071450ced49492
       session: {
         sessionId,
         labId,
@@ -108,7 +130,11 @@ exports.stopSession = (req, res) => {
   }
 };
 
+<<<<<<< HEAD
 exports.getCurrentActiveSession = async (req, res) => {
+=======
+exports.getCurrentActiveSession = (req, res) => {
+>>>>>>> cf753f4ff6dbdee6aac03d8225071450ced49492
   try {
     const session = db.prepare(`
       SELECT s.*, l.lab_name, l.location, c.course_name
@@ -130,13 +156,19 @@ exports.getCurrentActiveSession = async (req, res) => {
 
     const baseUrl = getAppBaseUrl();
     const qrScanUrl = `${baseUrl}/attendance/verify?session=${session.session_id}&token=${session.current_token}`;
+<<<<<<< HEAD
     const qrCode = await QRCode.toDataURL(qrScanUrl);
+=======
+>>>>>>> cf753f4ff6dbdee6aac03d8225071450ced49492
 
     res.json({
       success: true,
       active: true,
+<<<<<<< HEAD
       qrCode,
       qrUrl: qrScanUrl,
+=======
+>>>>>>> cf753f4ff6dbdee6aac03d8225071450ced49492
       session: {
         sessionId: session.session_id,
         labId: session.lab_id,

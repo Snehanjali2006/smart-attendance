@@ -18,8 +18,13 @@ export default function Login({ defaultRole = 'STUDENT' }) {
     : defaultRole;
 
   const [role, setRole] = useState(initialRole);
+<<<<<<< HEAD
   const [identifier, setIdentifier] = useState(initialRole === 'STUDENT' ? '' : initialRole === 'TEACHER' ? 'teacher@idealab.com' : 'admin@idealab.com');
   const [password, setPassword] = useState(initialRole === 'STUDENT' ? '' : initialRole === 'TEACHER' ? 'teacher123' : 'admin123');
+=======
+  const [identifier, setIdentifier] = useState('23CSE1045');
+  const [password, setPassword] = useState('student123');
+>>>>>>> cf753f4ff6dbdee6aac03d8225071450ced49492
   const [studentCategory, setStudentCategory] = useState('SIC');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -37,8 +42,13 @@ export default function Login({ defaultRole = 'STUDENT' }) {
     setRole(newRole);
     setError('');
     if (newRole === 'STUDENT') {
+<<<<<<< HEAD
       setIdentifier('');
       setPassword('');
+=======
+      setIdentifier('23CSE1045');
+      setPassword('student123');
+>>>>>>> cf753f4ff6dbdee6aac03d8225071450ced49492
       setStudentCategory('SIC');
     } else if (newRole === 'TEACHER') {
       setIdentifier('teacher@idealab.com');
