@@ -1,8 +1,12 @@
 const db = require('../config/database');
+const fs = require('fs');
+const path = require('path');
+const { calculateDistance } = require('../utils/geoUtils');
+const faceUtils = require('../utils/faceUtils');
 
-exports.verifyAndMarkAttendance = (req, res) => {
+exports.verifyAndMarkAttendance = async (req, res) => {
   try {
-    const { sessionId, token, code, deviceInfo } = req.body;
+    const { sessionId, token, code, deviceInfo, latitude, longitude, photo } = req.body;
     const userId = req.user.id;
 
     // 1. Validate student profile
@@ -97,20 +101,120 @@ exports.verifyAndMarkAttendance = (req, res) => {
       });
     }
 
+    // 4.5 Geolocation and Geofence Verification
+    if (!latitude || !longitude) {
+      return res.status(400).json({
+        success: false,
+        errorCode: 'LOCATION_REQUIRED',
+        message: 'GPS location is required to mark attendance.'
+      });
+    }
+
+    const lat = parseFloat(latitude);
+    const lng = parseFloat(longitude);
+
+    const getSetting = (key, defaultVal) => {
+      const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
+      return row ? row.value : defaultVal;
+    };
+
+    const labLat = parseFloat(getSetting('IDEALAB_LATITUDE', '20.998711'));
+    const labLng = parseFloat(getSetting('IDEALAB_LONGITUDE', '79.553924'));
+    const allowedRadius = parseFloat(getSetting('IDEALAB_ALLOWED_RADIUS', '500'));
+
+    const distance = calculateDistance(lat, lng, labLat, labLng);
+
+    if (distance > allowedRadius) {
+      return res.status(400).json({
+        success: false,
+        errorCode: 'OUTSIDE_GEOFENCE',
+        message: 'You are outside the IdeaLab attendance area.',
+        distance,
+        allowedRadius
+      });
+    }
+
+    // 4.6 Process and Save Photo
+    if (!photo || !photo.startsWith('data:image')) {
+      return res.status(400).json({
+        success: false,
+        errorCode: 'PHOTO_REQUIRED',
+        message: 'A live attendance photo is required.'
+      });
+    }
+
+    if (!student.face_embedding) {
+      return res.status(403).json({
+        success: false,
+        errorCode: 'FACE_NOT_REGISTERED',
+        message: 'Your face is not registered in the system. Please contact the administrator.'
+      });
+    }
+
+    const base64Data = photo.replace(/^data:image\/\w+;base64,/, "");
+    const imageBuffer = Buffer.from(base64Data, 'base64');
+    
+    // Process Face Match
+    try {
+      const liveFaceData = await faceUtils.detectSingleFace(imageBuffer);
+      const registeredEmbedding = JSON.parse(student.face_embedding);
+      
+      const distance = faceUtils.compareEmbeddings(registeredEmbedding, liveFaceData.embedding);
+      const threshold = parseFloat(getSetting('FACE_MATCH_THRESHOLD', '0.6'));
+      
+      if (distance > threshold) {
+        return res.status(400).json({
+          success: false,
+          errorCode: 'FACE_MISMATCH',
+          message: 'The captured face does not match your registered profile.',
+          distance
+        });
+      }
+    } catch (err) {
+      if (err.message === 'NO_FACE_DETECTED') {
+        return res.status(400).json({ success: false, errorCode: 'NO_FACE_DETECTED', message: 'No face detected in the frame. Please look at the camera.' });
+      }
+      if (err.message === 'MULTIPLE_FACES_DETECTED') {
+        return res.status(400).json({ success: false, errorCode: 'MULTIPLE_FACES_DETECTED', message: 'Multiple faces detected. Only you should be in the frame.' });
+      }
+      console.error('Face verification error:', err);
+      return res.status(500).json({ success: false, message: 'Server error during face verification.' });
+    }
+
+    const photoFileName = `${student.student_id}_${sessionId}_${Date.now()}.jpg`;
+    const photoDir = path.join(__dirname, '..', 'public', 'uploads', 'attendance');
+    const photoPath = path.join(photoDir, photoFileName);
+    
+    // Ensure directory exists
+    if (!fs.existsSync(photoDir)) {
+      fs.mkdirSync(photoDir, { recursive: true });
+    }
+    
+    fs.writeFileSync(photoPath, imageBuffer);
+    const photoUrl = `/uploads/attendance/${photoFileName}`;
+
     // 5. Insert Attendance Record
     const entryTimeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
     const fullDateStr = new Date().toLocaleDateString('en-US', { day: '2-digit', month: 'long', year: 'numeric' });
     const serverTimestamp = new Date().toISOString();
 
     db.prepare(`
-      INSERT INTO attendance (session_id, student_id, timestamp, status, device_info, ip_address)
-      VALUES (?, ?, ?, 'PRESENT', ?, ?)
+      INSERT INTO attendance (
+        session_id, student_id, timestamp, status, device_info, ip_address, 
+        photo_url, latitude, longitude, distance_from_lab, location_verified, captured_at
+      )
+      VALUES (?, ?, ?, 'PRESENT', ?, ?, ?, ?, ?, ?, 1, ?)
     `).run(
       sessionId,
       student.student_id,
       serverTimestamp,
       deviceInfo || req.headers['user-agent'] || 'Mobile Browser',
-      req.ip || '127.0.0.1'
+      req.ip || '127.0.0.1',
+      photoUrl,
+      lat,
+      lng,
+      distance,
+      serverTimestamp
     );
 
     // Get updated present count
@@ -150,7 +254,9 @@ exports.verifyAndMarkAttendance = (req, res) => {
         entryTime: entryTimeStr,
         date: fullDateStr,
         status: 'PRESENT',
-        presentCount
+        presentCount,
+        distance,
+        allowedRadius
       }
     });
 

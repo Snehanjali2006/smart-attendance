@@ -173,6 +173,14 @@ function initDatabase() {
     );
   `);
 
+  // Settings initial seed
+  db.exec(`
+    INSERT OR IGNORE INTO settings (key, value) VALUES ('IDEALAB_LATITUDE', '20.998711');
+    INSERT OR IGNORE INTO settings (key, value) VALUES ('IDEALAB_LONGITUDE', '79.553924');
+    INSERT OR IGNORE INTO settings (key, value) VALUES ('IDEALAB_ALLOWED_RADIUS', '500');
+    INSERT OR IGNORE INTO settings (key, value) VALUES ('FACE_MATCH_THRESHOLD', '0.6');
+  `);
+
   // Safe migrations for existing databases
   const addColumn = (table, colDef) => {
     try {
@@ -189,6 +197,9 @@ function initDatabase() {
   addColumn('students', 'student_category TEXT NOT NULL DEFAULT "SIC"');
   addColumn('students', 'division TEXT DEFAULT "A"');
   addColumn('students', 'academic_year TEXT DEFAULT "2025-2026"');
+  addColumn('students', 'face_photo TEXT');
+  addColumn('students', 'face_embedding TEXT');
+  addColumn('students', 'face_registered_at DATETIME');
 
   addColumn('teachers', 'phone TEXT');
   addColumn('teachers', 'designation TEXT DEFAULT "Assistant Professor"');
@@ -197,6 +208,13 @@ function initDatabase() {
   addColumn('teachers', 'assigned_subjects TEXT');
   addColumn('teachers', 'status TEXT DEFAULT "ACTIVE"');
   addColumn('teachers', 'created_at DATETIME DEFAULT CURRENT_TIMESTAMP');
+
+  addColumn('attendance', 'photo_url TEXT');
+  addColumn('attendance', 'latitude REAL');
+  addColumn('attendance', 'longitude REAL');
+  addColumn('attendance', 'distance_from_lab REAL');
+  addColumn('attendance', 'location_verified INTEGER DEFAULT 0');
+  addColumn('attendance', 'captured_at DATETIME');
 }
 
 initDatabase();

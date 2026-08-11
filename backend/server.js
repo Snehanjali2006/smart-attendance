@@ -27,6 +27,10 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Serve static public folder for uploads (photos)
+const path = require('path');
+app.use(express.static(path.join(__dirname, 'public')));
+
 // Seed Database with initial production data
 if (process.env.SEED_DB && process.env.SEED_DB.toLowerCase() === 'true') {
   try {

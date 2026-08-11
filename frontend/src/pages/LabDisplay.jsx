@@ -145,7 +145,7 @@ export default function LabDisplay() {
 
     // 3. If LAN IP detected by networkInfo
     if (networkInfo?.lanIp && networkInfo.lanIp !== 'localhost') {
-      return `http://${networkInfo.lanIp}:5173/attendance/verify?session=${activeSession.sessionId}&token=${qrToken}`;
+      return `https://${networkInfo.lanIp}:5173/attendance/verify?session=${activeSession.sessionId}&token=${qrToken}`;
     }
 
     // Fallback

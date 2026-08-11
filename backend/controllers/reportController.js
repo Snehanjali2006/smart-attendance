@@ -4,7 +4,7 @@ exports.getAttendanceReport = (req, res) => {
   try {
     const { branch, year, department, startDate, endDate, category } = req.query;
 
-    let query = 'SELECT * FROM students WHERE status = "ACTIVE"';
+    let query = "SELECT * FROM students WHERE status = 'ACTIVE'";
     const params = [];
 
     if (branch && branch !== 'ALL') {
@@ -30,7 +30,7 @@ exports.getAttendanceReport = (req, res) => {
     const totalSessionsCount = db.prepare('SELECT COUNT(*) as count FROM attendance_sessions').get().count || 1;
 
     const reportRows = students.map((st) => {
-      const pCount = db.prepare('SELECT COUNT(*) as count FROM attendance WHERE student_id = ? AND status = "PRESENT"').get(st.student_id).count;
+      const pCount = db.prepare("SELECT COUNT(*) as count FROM attendance WHERE student_id = ? AND status = 'PRESENT'").get(st.student_id).count;
       const aCount = Math.max(0, totalSessionsCount - pCount);
       const pct = Math.round((pCount / totalSessionsCount) * 100);
 

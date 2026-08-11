@@ -12,9 +12,12 @@ import {
   Zap,
   X,
   Check,
-  Trash2
+  Trash2,
+  Camera,
+  ScanFace
 } from 'lucide-react';
 import CredentialCardModal from '../../components/CredentialCardModal';
+import StudentRegisterFace from './StudentRegisterFace';
 
 export default function AdminStudents() {
   const [students, setStudents] = useState([]);
@@ -39,6 +42,9 @@ export default function AdminStudents() {
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  
+  // Face Registration Modal
+  const [showFaceModal, setShowFaceModal] = useState(false);
 
   // Form state
   const [form, setForm] = useState({
@@ -55,7 +61,8 @@ export default function AdminStudents() {
     division: 'A',
     academicYear: '2025-2026',
     status: 'ACTIVE',
-    forcePasswordChange: true
+    forcePasswordChange: true,
+    profilePhoto: ''
   });
 
   const fetchStudents = async () => {
@@ -136,7 +143,8 @@ export default function AdminStudents() {
       division: 'A',
       academicYear: '2025-2026',
       status: 'ACTIVE',
-      forcePasswordChange: true
+      forcePasswordChange: true,
+      profilePhoto: ''
     });
     setEditingStudent(null);
     setErrorMsg('');
@@ -158,7 +166,8 @@ export default function AdminStudents() {
       division: st.division || 'A',
       academicYear: st.academic_year || '2025-2026',
       status: st.user_status || 'ACTIVE',
-      forcePasswordChange: true
+      forcePasswordChange: true,
+      profilePhoto: '' // We do not load existing face photo base64, we can only update it
     });
     setShowAddModal(true);
   };
@@ -351,6 +360,7 @@ export default function AdminStudents() {
                 <th className="p-4">STUDENT NAME</th>
                 <th className="p-4">CATEGORY</th>
                 <th className="p-4">SIC / STUDENT ID</th>
+                <th className="p-4">FACE</th>
                 <th className="p-4">BRANCH & DEPT</th>
                 <th className="p-4">YEAR & SEM</th>
                 <th className="p-4">STATUS</th>
@@ -398,6 +408,19 @@ export default function AdminStudents() {
                       <span className="font-bold text-violet-300 bg-violet-500/10 px-2 py-1 rounded border border-violet-500/20">
                         {st.student_id}
                       </span>
+                    </td>
+                    <td className="p-4">
+                      {st.face_registered_at || st.face_photo ? (
+                        <div className="flex items-center gap-1 text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20 w-max">
+                          <Check className="w-3 h-3" />
+                          <span className="text-[10px] font-bold">REGISTERED</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1 text-orange-400 bg-orange-500/10 px-2 py-1 rounded border border-orange-500/20 w-max">
+                          <AlertTriangle className="w-3 h-3" />
+                          <span className="text-[10px] font-bold">MISSING</span>
+                        </div>
+                      )}
                     </td>
                     <td className="p-4">
                       <span className="text-gray-200 block">{st.branch}</span>
@@ -679,6 +702,30 @@ export default function AdminStudents() {
                   </select>
                 </div>
               </div>
+              
+              <div className="p-3 bg-orange-950/40 border border-orange-500/30 rounded-xl space-y-2 mt-4">
+                <div className="flex items-center justify-between">
+                  <label className="block text-orange-300 font-bold">FACE REGISTRATION</label>
+                  <button
+                    type="button"
+                    onClick={() => setShowFaceModal(true)}
+                    className="px-3 py-1.5 bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold rounded-lg flex items-center gap-2 shadow-lg"
+                  >
+                    <Camera className="w-4 h-4" />
+                    <span>{form.profilePhoto ? 'Retake Photo' : 'Capture Face'}</span>
+                  </button>
+                </div>
+                {form.profilePhoto ? (
+                  <div className="flex items-center gap-2 text-emerald-400 text-xs font-bold bg-emerald-500/10 p-2 rounded">
+                    <Check className="w-4 h-4" />
+                    Face photo captured and ready to save.
+                  </div>
+                ) : (
+                  <p className="text-gray-400 text-[10px]">
+                    No face registered yet. Click Capture Face to register the student's face for attendance.
+                  </p>
+                )}
+              </div>
 
               <div className="pt-4 flex gap-3">
                 <button
@@ -925,6 +972,12 @@ export default function AdminStudents() {
           onClose={() => setCreatedCredentials(null)}
         />
       )}
+      {/* Delete Confirmation Modal (handled inline with native confirm previously, but keeping state clean) */}
+      <StudentRegisterFace
+        isOpen={showFaceModal}
+        onClose={() => setShowFaceModal(false)}
+        onSave={(dataUrl) => setForm(prev => ({ ...prev, profilePhoto: dataUrl }))}
+      />
     </div>
   );
 }

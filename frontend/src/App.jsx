@@ -83,6 +83,16 @@ function RoleGuard({ allowedRoles, fallbackPath }) {
   return <Outlet />;
 }
 
+function PublicOnlyGuard() {
+  const { user, loading } = useAuth();
+  if (loading) return null;
+  
+  if (user && user.role === 'STUDENT') {
+    return <Navigate to="/student/dashboard" replace />;
+  }
+  return <Outlet />;
+}
+
 export default function App() {
   return (
     <AuthProvider>
@@ -96,7 +106,9 @@ export default function App() {
             <Route path="/student/login" element={<Login defaultRole="STUDENT" />} />
 
             {/* Standalone Lab PC Display Screen */}
-            <Route path="/lab-display" element={<LabDisplay />} />
+            <Route element={<PublicOnlyGuard />}>
+              <Route path="/lab-display" element={<LabDisplay />} />
+            </Route>
 
             {/* Public/Mobile QR Verification Route */}
             <Route path="/attendance/verify" element={<AttendanceVerify />} />

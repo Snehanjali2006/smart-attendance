@@ -22,7 +22,7 @@ function getAppBaseUrl(frontendPort = 5173) {
   // Priority 2: Automatic LAN IPv4 detection
   const lanIp = getLanIpAddress();
   if (lanIp && lanIp !== 'localhost') {
-    return `http://${lanIp}:${frontendPort}`;
+    return `https://${lanIp}:${frontendPort}`;
   }
 
   // Priority 3: localhost fallback

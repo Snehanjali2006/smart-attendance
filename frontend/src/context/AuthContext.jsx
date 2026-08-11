@@ -41,6 +41,7 @@ export function AuthProvider({ children }) {
     setToken(null);
     localStorage.removeItem('idealab_user');
     localStorage.removeItem('idealab_token');
+    sessionStorage.clear();
   };
 
   const clearForcePasswordChange = () => {

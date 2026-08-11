@@ -2,7 +2,7 @@ const db = require('../config/database');
 
 exports.getTeacherDashboard = (req, res) => {
   try {
-    const totalStudents = db.prepare('SELECT COUNT(*) as count FROM students WHERE status = "ACTIVE"').get().count;
+    const totalStudents = db.prepare("SELECT COUNT(*) as count FROM students WHERE status = 'ACTIVE'").get().count;
 
     const activeSession = db.prepare(`
       SELECT s.*, l.lab_name, c.course_name
@@ -15,12 +15,12 @@ exports.getTeacherDashboard = (req, res) => {
 
     let presentToday = 0;
     if (activeSession) {
-      presentToday = db.prepare('SELECT COUNT(*) as count FROM attendance WHERE session_id = ? AND status = "PRESENT"').get(activeSession.session_id).count;
+      presentToday = db.prepare("SELECT COUNT(*) as count FROM attendance WHERE session_id = ? AND status = 'PRESENT'").get(activeSession.session_id).count;
     } else {
       // Latest session count
       const latestSession = db.prepare('SELECT session_id FROM attendance_sessions ORDER BY created_at DESC LIMIT 1').get();
       if (latestSession) {
-        presentToday = db.prepare('SELECT COUNT(*) as count FROM attendance WHERE session_id = ? AND status = "PRESENT"').get(latestSession.session_id).count;
+        presentToday = db.prepare("SELECT COUNT(*) as count FROM attendance WHERE session_id = ? AND status = 'PRESENT'").get(latestSession.session_id).count;
       }
     }
 
@@ -28,15 +28,15 @@ exports.getTeacherDashboard = (req, res) => {
     const attendancePct = totalStudents > 0 ? ((presentToday / totalStudents) * 100).toFixed(2) : '0.00';
 
     // Fetch Low Attendance Students (< 75%)
-    const minPctSetting = db.prepare('SELECT value FROM settings WHERE key = "min_attendance_pct"').get();
+    const minPctSetting = db.prepare("SELECT value FROM settings WHERE key = 'min_attendance_pct'").get();
     const threshold = minPctSetting ? parseInt(minPctSetting.value, 10) : 75;
 
-    const allStudents = db.prepare('SELECT * FROM students WHERE status = "ACTIVE"').all();
+    const allStudents = db.prepare("SELECT * FROM students WHERE status = 'ACTIVE'").all();
     const totalSessionsCount = db.prepare('SELECT COUNT(*) as count FROM attendance_sessions').get().count || 1;
 
     const lowAttendanceList = [];
     allStudents.forEach((st) => {
-      const pCount = db.prepare('SELECT COUNT(*) as count FROM attendance WHERE student_id = ? AND status = "PRESENT"').get(st.student_id).count;
+      const pCount = db.prepare("SELECT COUNT(*) as count FROM attendance WHERE student_id = ? AND status = 'PRESENT'").get(st.student_id).count;
       const pct = Math.round((pCount / totalSessionsCount) * 100);
       if (pct < threshold) {
         lowAttendanceList.push({
@@ -144,7 +144,7 @@ exports.getStudentsList = (req, res) => {
     const totalSessions = db.prepare('SELECT COUNT(*) as count FROM attendance_sessions').get().count || 1;
 
     const listWithStats = students.map((st) => {
-      const pCount = db.prepare('SELECT COUNT(*) as count FROM attendance WHERE student_id = ? AND status = "PRESENT"').get(st.student_id).count;
+      const pCount = db.prepare("SELECT COUNT(*) as count FROM attendance WHERE student_id = ? AND status = 'PRESENT'").get(st.student_id).count;
       const pct = Math.round((pCount / totalSessions) * 100);
       return {
         ...st,

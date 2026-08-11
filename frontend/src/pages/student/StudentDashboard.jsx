@@ -45,8 +45,8 @@ export default function StudentDashboard() {
 
         <div className="relative inline-block mb-4">
           <img
-            src={profile.profile_photo || 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150'}
-            alt={profile.name || 'Student'}
+            src={profile.face_photo ? profile.face_photo : (profile.profile_photo || 'https://api.dicebear.com/7.x/avataaars/svg?seed=ILAB')}
+            alt="Student Avatar"
             className="w-24 h-24 rounded-2xl object-cover border-2 border-violet-500/50 shadow-xl shadow-violet-500/20 mx-auto"
           />
           <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-lg bg-violet-600 flex items-center justify-center text-white text-xs font-bold">

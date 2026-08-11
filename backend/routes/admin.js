@@ -38,6 +38,7 @@ router.post('/labs', adminController.createLab);
 
 // System Audit Logs & Settings
 router.get('/audit-logs', adminController.getAuditLogs);
+router.get('/settings', adminController.getSettings);
 router.post('/settings', adminController.updateSettings);
 
 module.exports = router;

@@ -1,20 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { apiRequest } from '../utils/api';
 import {
-  Sparkles,
+  Camera,
+  MapPin,
   CheckCircle2,
   XCircle,
   Clock,
-  AlertTriangle,
-  KeyRound,
   ShieldAlert,
   ArrowRight,
   UserCheck,
-  Building2,
-  Lock,
-  ArrowLeft
+  ArrowLeft,
+  RefreshCcw,
+  Navigation
 } from 'lucide-react';
 import BackgroundParticles from '../components/BackgroundParticles';
 
@@ -26,23 +25,75 @@ export default function AttendanceVerify() {
   const sessionId = searchParams.get('session') || '';
   const token = searchParams.get('token') || '';
 
-  // Mobile login fields
-  const [studentIdInput, setStudentIdInput] = useState('23CSE1045');
-  const [passwordInput, setPasswordInput] = useState('student123');
+  // Wizard Steps: LOGIN -> CAMERA -> LOCATION -> CODE -> RESULT
+  const [step, setStep] = useState(user ? 'CAMERA' : 'LOGIN');
+
+  // Login Form
+  const [studentIdInput, setStudentIdInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
   const [studentCategory, setStudentCategory] = useState('SIC');
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState('');
 
-  // Code entry field
+  // Camera State
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const [stream, setStream] = useState(null);
+  const [photoDataUrl, setPhotoDataUrl] = useState('');
+  const [cameraError, setCameraError] = useState('');
+  const [cameraReady, setCameraReady] = useState(false);
+  
+  // Debug State
+  const [debugInfo, setDebugInfo] = useState({
+    permission: 'UNKNOWN',
+    streamActive: 'INACTIVE',
+    videoReady: 'NO',
+    videoWidth: 0,
+    videoHeight: 0,
+    secureContext: window.isSecureContext ? 'YES' : 'NO',
+    trackState: 'NONE',
+    capturedBytes: 0
+  });
+
+  // Location State
+  const [location, setLocation] = useState(null); // { lat, lng }
+  const [locationError, setLocationError] = useState('');
+
+  // Code Entry State
   const [enteredCode, setEnteredCode] = useState('');
   const [verifying, setVerifying] = useState(false);
 
-  // Verification result states
-  const [verifyState, setVerifyState] = useState('IDLE'); // 'IDLE' | 'SUCCESS' | 'INVALID_CODE' | 'EXPIRED' | 'ALREADY' | 'INACTIVE' | 'UNAUTHORIZED'
+  // Result State
+  const [verifyState, setVerifyState] = useState('IDLE'); 
   const [resultRecord, setResultRecord] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
+  const [distanceInfo, setDistanceInfo] = useState(null);
 
-  // Mobile Login Submit Handler
+  // Keep streamRef in sync
+  useEffect(() => {
+    streamRef.current = stream;
+  }, [stream]);
+
+  // Stop camera when component unmounts or leaves camera step
+  useEffect(() => {
+    if (step !== 'CAMERA' && stream) {
+      stream.getTracks().forEach(track => track.stop());
+      setStream(null);
+      setCameraReady(false);
+      setDebugInfo(prev => ({ ...prev, streamActive: 'INACTIVE', videoReady: 'NO', trackState: 'STOPPED' }));
+    }
+  }, [step, stream]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, []);
+
+  // LOGIN STEP
   const handleMobileLogin = async (e) => {
     e.preventDefault();
     if (!studentIdInput || !passwordInput) {
@@ -62,21 +113,246 @@ export default function AttendanceVerify() {
 
     if (res.success && res.token && res.user) {
       if (res.user.role !== 'STUDENT') {
-        setLoginError('Only student accounts can mark attendance. Switch to a student login.');
+        setLoginError('Only student accounts can mark attendance.');
         return;
       }
       login(res.user, res.token);
+      setStep('CAMERA');
     } else {
-      setLoginError(res.message || 'Login failed. Invalid credentials or category selection.');
+      setLoginError(res.message || 'Login failed.');
     }
   };
 
-  // Unique Code Verification Submit Handler
+  // CAMERA STEP
+  const startCamera = async (forceFallback = false) => {
+    setCameraError('');
+    setPhotoDataUrl('');
+    setCameraReady(false);
+    
+    const isSecure = window.isSecureContext;
+    setDebugInfo(prev => ({ ...prev, secureContext: isSecure ? 'YES' : 'NO', permission: 'REQUESTING...', trackState: 'NONE', capturedBytes: 0 }));
+
+    if (!isSecure) {
+      setCameraError('Camera requires HTTPS or localhost.');
+      setDebugInfo(prev => ({ ...prev, permission: 'DENIED (Insecure)' }));
+      return;
+    }
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setCameraError('Camera is not supported by this browser.');
+      setDebugInfo(prev => ({ ...prev, permission: 'DENIED (Unsupported)' }));
+      return;
+    }
+
+    const constraints = forceFallback 
+      ? { video: true, audio: false }
+      : { 
+          video: { 
+            facingMode: "user",
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }, 
+          audio: false 
+        };
+
+    try {
+      const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+      setStream(mediaStream);
+
+      const tracks = mediaStream.getVideoTracks();
+      const trackInfo = tracks.length > 0 ? `${tracks[0].readyState} (${tracks.length} tracks)` : 'NO TRACKS';
+      setDebugInfo(prev => ({ ...prev, permission: 'GRANTED', streamActive: 'ACTIVE', trackState: trackInfo }));
+
+      const video = videoRef.current;
+      if (!video) {
+        setCameraError('Video element not found.');
+        return;
+      }
+
+      video.srcObject = mediaStream;
+
+      // Wait for loadedmetadata THEN wait for an actual rendered frame
+      await new Promise((resolve, reject) => {
+        video.onloadedmetadata = () => {
+          video.play().then(() => {
+            const w = video.videoWidth;
+            const h = video.videoHeight;
+            setDebugInfo(prev => ({ ...prev, videoWidth: w, videoHeight: h, videoReady: (w > 0 && h > 0) ? 'METADATA' : 'NO' }));
+
+            // Now wait for an actual painted frame
+            if (typeof video.requestVideoFrameCallback === 'function') {
+              // Best method: wait for browser to paint a real frame
+              video.requestVideoFrameCallback(() => {
+                setDebugInfo(prev => ({ ...prev, videoReady: 'YES (frame callback)' }));
+                setCameraReady(true);
+                resolve();
+              });
+            } else {
+              // Fallback: wait 500ms after play for frame to render
+              setTimeout(() => {
+                setDebugInfo(prev => ({ ...prev, videoReady: 'YES (timeout fallback)' }));
+                setCameraReady(true);
+                resolve();
+              }, 500);
+            }
+          }).catch(reject);
+        };
+        video.onerror = reject;
+      });
+
+    } catch (error) {
+      console.error('Camera error:', error);
+      
+      let errorMsg = `Failed to open camera: ${error.message || error.name}`;
+      setDebugInfo(prev => ({ ...prev, permission: 'DENIED', streamActive: 'ERROR: ' + error.name }));
+
+      if (error.name === 'NotAllowedError') {
+        errorMsg = 'Camera permission denied.';
+      } else if (error.name === 'NotFoundError') {
+        errorMsg = 'No camera found.';
+      } else if (error.name === 'NotReadableError') {
+        errorMsg = 'Camera is being used by another application.';
+      } else if (error.name === 'OverconstrainedError' && !forceFallback) {
+        console.log('Retrying camera without specific constraints...');
+        startCamera(true);
+        return;
+      } else if (error.name === 'SecurityError') {
+        errorMsg = 'Camera requires a secure HTTPS connection.';
+      } else if (error.name === 'AbortError') {
+        errorMsg = 'Camera could not be started. Please try again.';
+      }
+      
+      setCameraError(errorMsg);
+    }
+  };
+
+  const capturePhoto = async () => {
+    const video = videoRef.current;
+
+    if (!video) {
+      setCameraError('Video element not found.');
+      return;
+    }
+
+    if (!video.srcObject) {
+      setCameraError('Camera stream not available.');
+      return;
+    }
+
+    // Check track is actually live
+    const tracks = video.srcObject.getVideoTracks();
+    console.log('Track info:', tracks.map(t => ({ enabled: t.enabled, readyState: t.readyState, settings: t.getSettings() })));
+    if (tracks.length === 0 || tracks[0].readyState !== 'live') {
+      setCameraError('Camera track is not live. Please restart camera.');
+      setDebugInfo(prev => ({ ...prev, trackState: tracks.length > 0 ? tracks[0].readyState : 'NO TRACKS' }));
+      return;
+    }
+
+    if (video.readyState < 2) {
+      setCameraError('Video is not ready. readyState=' + video.readyState);
+      return;
+    }
+
+    if (video.videoWidth === 0 || video.videoHeight === 0) {
+      setCameraError('Invalid video dimensions: ' + video.videoWidth + 'x' + video.videoHeight);
+      return;
+    }
+
+    // Create a NEW canvas (not a hidden DOM one which can fail on mobile)
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    if (!context) {
+      setCameraError('Canvas context unavailable.');
+      return;
+    }
+
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    const imageData = canvas.toDataURL('image/jpeg', 0.92);
+
+    console.log('Captured image length:', imageData.length, 'Canvas:', canvas.width, 'x', canvas.height);
+
+    if (!imageData || !imageData.startsWith('data:image/jpeg') || imageData.length < 5000) {
+      setCameraError('Invalid/blank captured image. Length=' + imageData.length);
+      setDebugInfo(prev => ({ ...prev, capturedBytes: imageData.length }));
+      return;
+    }
+
+    // Validate image loads correctly
+    const testImg = new Image();
+    testImg.onload = () => {
+      console.log('Validated image dimensions:', testImg.width, 'x', testImg.height);
+      if (testImg.width === 0 || testImg.height === 0) {
+        setCameraError('Captured image has zero dimensions.');
+        return;
+      }
+      setDebugInfo(prev => ({ ...prev, capturedBytes: imageData.length, videoWidth: video.videoWidth, videoHeight: video.videoHeight }));
+      setPhotoDataUrl(imageData);
+    };
+    testImg.onerror = () => {
+      setCameraError('Captured image failed to load as valid image.');
+    };
+    testImg.src = imageData;
+  };
+
+  const retakePhoto = () => {
+    setPhotoDataUrl('');
+    setCameraError('');
+    // Stream was kept alive during capture, so just clear the preview
+    if (!stream) {
+      startCamera();
+    }
+  };
+
+  const usePhoto = () => {
+    if (!photoDataUrl) {
+      setCameraError('No photo captured yet.');
+      return;
+    }
+    // NOW stop the stream safely
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      setStream(null);
+    }
+    setStep('LOCATION');
+    getLocation();
+  };
+
+  // LOCATION STEP
+  const getLocation = () => {
+    setLocationError('');
+    setLocation(null);
+
+    if (!navigator.geolocation) {
+      setLocationError('Geolocation is not supported by your browser.');
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setLocation({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude
+        });
+        setTimeout(() => setStep('CODE'), 1500); // Small delay to show "Got location"
+      },
+      (error) => {
+        setLocationError('Location access denied or unavailable. Please allow location permissions.');
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  };
+
+  // FINAL SUBMIT (CODE STEP)
   const handleVerifySubmit = async (e) => {
     e.preventDefault();
     if (!enteredCode) {
-      setErrorMessage('Please enter the number displayed on the Lab PC.');
+      setErrorMessage('Please enter the number.');
       setVerifyState('INVALID_CODE');
+      setStep('RESULT');
       return;
     }
 
@@ -87,9 +363,14 @@ export default function AttendanceVerify() {
       sessionId,
       token,
       code: enteredCode,
-      deviceInfo: 'Mobile Web Browser'
+      deviceInfo: 'Mobile Web Browser',
+      latitude: location.lat,
+      longitude: location.lng,
+      photo: photoDataUrl
     });
+    
     setVerifying(false);
+    setStep('RESULT');
 
     if (res.success && res.record) {
       setResultRecord(res.record);
@@ -97,11 +378,19 @@ export default function AttendanceVerify() {
     } else {
       setErrorMessage(res.message || 'Verification failed.');
       const code = res.errorCode;
-      if (code === 'INVALID_CODE') setVerifyState('INVALID_CODE');
+      if (code === 'OUTSIDE_GEOFENCE') {
+        setVerifyState('GEOFENCE_FAILED');
+        setDistanceInfo({ distance: res.distance, allowed: res.allowedRadius });
+      }
+      else if (code === 'INVALID_CODE') setVerifyState('INVALID_CODE');
       else if (code === 'EXPIRED_TOKEN') setVerifyState('EXPIRED');
       else if (code === 'ALREADY_MARKED') setVerifyState('ALREADY');
       else if (code === 'SESSION_INACTIVE') setVerifyState('INACTIVE');
       else if (code === 'UNAUTHORIZED') setVerifyState('UNAUTHORIZED');
+      else if (code === 'FACE_MISMATCH') setVerifyState('FACE_MISMATCH');
+      else if (code === 'NO_FACE_DETECTED') setVerifyState('NO_FACE_DETECTED');
+      else if (code === 'MULTIPLE_FACES_DETECTED') setVerifyState('MULTIPLE_FACES_DETECTED');
+      else if (code === 'FACE_NOT_REGISTERED') setVerifyState('FACE_NOT_REGISTERED');
       else setVerifyState('INVALID_CODE');
     }
   };
@@ -111,26 +400,19 @@ export default function AttendanceVerify() {
       <BackgroundParticles />
 
       <div className="w-full max-w-md glass-card p-6 md:p-8 border-violet-500/30 neon-border-purple z-10 shadow-2xl relative">
-        {/* Header */}
         <div className="text-center mb-6">
           <img src="/aicte-logo.jpg" alt="AICTE IDEALab Logo" className="w-12 h-12 object-contain rounded-2xl mx-auto shadow-lg shadow-violet-500/30 mb-3 bg-white p-1" />
           <h1 className="text-xl font-black text-white tracking-tight">
-            IDEALAB SMART ATTENDANCE
+            ATTENDANCE VERIFICATION
           </h1>
-          <p className="text-[10px] text-violet-400 tracking-widest uppercase mt-1">
-            "Scan • Verify • Attend"
-          </p>
         </div>
 
-        {/* STEP 1: MOBILE STUDENT LOGIN (IF NOT LOGGED IN) */}
-        {!user && verifyState === 'IDLE' && (
+        {/* STEP 1: LOGIN */}
+        {step === 'LOGIN' && (
           <div className="space-y-5">
             <div className="p-3 bg-violet-950/40 border border-violet-500/30 rounded-xl text-center">
               <span className="text-[11px] text-violet-300 font-bold block">
-                🔒 LOGIN TO MARK YOUR ATTENDANCE
-              </span>
-              <span className="text-[10px] text-gray-400 block mt-0.5">
-                Session Token Preserved from Lab PC Scan
+                🔒 LOGIN TO CONTINUE
               </span>
             </div>
 
@@ -142,283 +424,292 @@ export default function AttendanceVerify() {
 
             <form onSubmit={handleMobileLogin} className="space-y-4 text-xs">
               <div>
-                <label className="block text-[10px] text-gray-300 uppercase font-bold mb-1">
-                  STUDENT CATEGORY
-                </label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-2 mb-4">
+                  <button type="button" onClick={() => setStudentCategory('SIC')} className={`py-2 px-3 rounded-xl text-xs font-bold font-mono transition-all border ${studentCategory === 'SIC' ? 'bg-violet-600/30 border-violet-500 text-white shadow-md' : 'bg-white/5 border-white/10 text-gray-400'}`}>SIC</button>
+                  <button type="button" onClick={() => setStudentCategory('SC')} className={`py-2 px-3 rounded-xl text-xs font-bold font-mono transition-all border ${studentCategory === 'SC' ? 'bg-indigo-600/30 border-indigo-500 text-white shadow-md' : 'bg-white/5 border-white/10 text-gray-400'}`}>SC</button>
+                </div>
+                <input
+                  type="text" required value={studentIdInput} onChange={(e) => setStudentIdInput(e.target.value)}
+                  placeholder="Student ID / SIC"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white mb-4 focus:outline-none focus:border-violet-500"
+                />
+                <input
+                  type="password" required value={passwordInput} onChange={(e) => setPasswordInput(e.target.value)}
+                  placeholder="Password"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-violet-500"
+                />
+              </div>
+
+              <button type="submit" disabled={loginLoading} className="w-full py-3 rounded-xl bg-violet-600 text-white text-xs font-bold shadow-lg hover:opacity-95 flex justify-center gap-2">
+                {loginLoading ? 'Authenticating...' : 'CONTINUE'} <ArrowRight className="w-4 h-4" />
+              </button>
+            </form>
+          </div>
+        )}
+
+        {/* STEP 2: CAMERA */}
+        {step === 'CAMERA' && (
+          <div className="space-y-4 text-center">
+            <span className="text-[10px] text-gray-400 tracking-wider">ATTENDANCE CAMERA</span>
+            <h2 className="text-lg font-bold text-white flex items-center justify-center gap-2">
+              <Camera className="w-5 h-5 text-violet-400" /> LIVE CAMERA PREVIEW
+            </h2>
+
+            {cameraError && (
+              <div className="p-3 bg-red-950/40 border border-red-500/30 text-red-400 text-xs rounded-xl">
+                {cameraError}
+              </div>
+            )}
+
+            {/* START CAMERA BUTTON — only when no stream and no captured photo */}
+            {!photoDataUrl && !stream && (
+              <div className="text-center py-8">
+                <p className="text-xs text-gray-400 mb-4">Camera status: WAITING FOR START</p>
+                <button onClick={() => startCamera(false)} className="w-full py-3 bg-cyan-600 text-white font-bold rounded-xl flex items-center justify-center gap-2">
+                  <Camera className="w-5 h-5" /> [ START CAMERA ]
+                </button>
+              </div>
+            )}
+
+            {/* DEBUG UI */}
+            <div className="text-left bg-black/50 p-3 rounded-lg border border-gray-700 text-[10px] text-green-400 font-mono space-y-1">
+              <div>Camera permission: {debugInfo.permission}</div>
+              <div>Camera stream: {debugInfo.streamActive}</div>
+              <div>Video ready: {debugInfo.videoReady}</div>
+              <div>Video width: {debugInfo.videoWidth}</div>
+              <div>Video height: {debugInfo.videoHeight}</div>
+              <div>Secure context: {debugInfo.secureContext}</div>
+              <div>Track state: {debugInfo.trackState}</div>
+              <div>Captured image size: {debugInfo.capturedBytes} bytes</div>
+            </div>
+
+            {/* LIVE VIDEO — stream active, no captured photo yet */}
+            {!photoDataUrl && stream && (
+              <div className="relative mt-4">
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  style={{ width: '100%', height: 'auto', objectFit: 'cover' }}
+                  className="rounded-2xl border-2 border-violet-500/50 bg-black"
+                />
+                
+                {cameraReady ? (
+                  <div className="absolute top-2 left-2 bg-emerald-500/80 text-white text-[10px] font-bold px-2 py-1 rounded">✓ CAMERA READY</div>
+                ) : (
+                  <div className="absolute top-2 left-2 bg-orange-500/80 text-white text-[10px] font-bold px-2 py-1 rounded animate-pulse">CAMERA STARTING...</div>
+                )}
+                
+                <div className="mt-4 text-center">
                   <button
-                    type="button"
-                    onClick={() => setStudentCategory('SIC')}
-                    className={`py-2 px-3 rounded-xl text-xs font-bold font-mono transition-all border ${
-                      studentCategory === 'SIC'
-                        ? 'bg-violet-600/30 border-violet-500 text-white shadow-md shadow-violet-500/20'
-                        : 'bg-white/5 border-white/10 text-gray-400 hover:text-white'
-                    }`}
+                    onClick={capturePhoto}
+                    disabled={!cameraReady}
+                    className={`py-3 px-6 font-bold text-xs rounded-full shadow-lg w-full ${cameraReady ? 'bg-white text-black hover:bg-gray-200' : 'bg-gray-600 text-gray-300 opacity-50 cursor-not-allowed'}`}
                   >
-                    <div className="text-[11px]">SIC</div>
-                    <div className="text-[9px] font-normal opacity-80">Innovation Council</div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setStudentCategory('SC')}
-                    className={`py-2 px-3 rounded-xl text-xs font-bold font-mono transition-all border ${
-                      studentCategory === 'SC'
-                        ? 'bg-indigo-600/30 border-indigo-500 text-white shadow-md shadow-indigo-500/20'
-                        : 'bg-white/5 border-white/10 text-gray-400 hover:text-white'
-                    }`}
-                  >
-                    <div className="text-[11px]">SC</div>
-                    <div className="text-[9px] font-normal opacity-80">Student Chapter</div>
+                    [ CAPTURE PHOTO ]
                   </button>
                 </div>
               </div>
+            )}
 
-              <div>
-                <label className="block text-[10px] text-gray-300 uppercase font-bold mb-1">
-                  STUDENT ID / SIC
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={studentIdInput}
-                  onChange={(e) => setStudentIdInput(e.target.value)}
-                  placeholder="e.g. 23CSE1045"
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-violet-500 font-mono"
-                />
+            {/* CAPTURED PHOTO PREVIEW */}
+            {photoDataUrl && (
+              <div className="mt-4 space-y-4">
+                <p className="text-[10px] text-emerald-400 font-bold">CAPTURED PHOTO:</p>
+                <img src={photoDataUrl} alt="Captured attendance photo" className="w-full rounded-2xl border-2 border-emerald-500/50" style={{ objectFit: 'cover' }} />
+                <div className="flex gap-2">
+                  <button onClick={retakePhoto} className="flex-1 py-3 bg-white/10 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2">
+                    <RefreshCcw className="w-4 h-4" /> [ RETAKE ]
+                  </button>
+                  <button onClick={usePhoto} className="flex-1 py-3 bg-emerald-600 text-white rounded-xl text-xs font-bold">
+                    [ USE THIS PHOTO ]
+                  </button>
+                </div>
               </div>
-
-              <div>
-                <label className="block text-[10px] text-gray-300 uppercase font-bold mb-1">
-                  PASSWORD
-                </label>
-                <input
-                  type="password"
-                  required
-                  value={passwordInput}
-                  onChange={(e) => setPasswordInput(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-violet-500 font-mono"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={loginLoading}
-                className="w-full py-3 rounded-xl bg-gradient-to-r from-violet-600 via-indigo-600 to-cyan-500 text-white text-xs font-bold shadow-lg shadow-violet-600/30 hover:opacity-95 transition-all flex items-center justify-center gap-2"
-              >
-                {loginLoading ? (
-                  <span>Authenticating...</span>
-                ) : (
-                  <>
-                    <span>CONTINUE TO VERIFICATION</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </>
-                )}
-              </button>
-            </form>
-
-            <div className="pt-4 border-t border-white/10 text-center text-[10px] text-gray-400">
-              Your account is provided by <strong className="text-violet-300">IdeaLab Administration</strong>.
-            </div>
+            )}
           </div>
         )}
 
-        {/* STEP 2: UNIQUE NUMBER ENTRY (IF LOGGED IN & STATE IS IDLE) */}
-        {user && verifyState === 'IDLE' && (
-          <div className="space-y-6">
-            <div className="text-center">
-              <span className="text-[11px] text-emerald-400 font-bold block">
-                Welcome, {user.name} 👋
-              </span>
-              <h2 className="text-lg font-bold text-white mt-1">Verify Attendance</h2>
-              <p className="text-xs text-gray-400 mt-1">
-                Enter the number shown on the IdeaLab Lab Display.
-              </p>
-            </div>
+        {/* STEP 3: LOCATION */}
+        {step === 'LOCATION' && (
+          <div className="space-y-6 text-center">
+            <span className="text-[10px] text-gray-400 tracking-wider">Step 2 of 3</span>
+            <h2 className="text-lg font-bold text-white flex items-center justify-center gap-2">
+              <MapPin className="w-5 h-5 text-cyan-400" /> Location Verification
+            </h2>
 
-            <form onSubmit={handleVerifySubmit} className="space-y-5 text-center">
-              <div className="p-4 bg-white/5 border border-violet-500/30 rounded-2xl space-y-3">
-                <span className="text-[10px] text-violet-300 tracking-wider uppercase font-bold block">
-                  CURRENT LAB DISPLAY NUMBER
-                </span>
+            {locationError ? (
+              <div className="space-y-4">
+                <div className="p-4 bg-red-950/40 border border-red-500/30 text-red-400 text-xs rounded-xl">
+                  {locationError}
+                </div>
+                <button onClick={getLocation} className="w-full py-3 bg-cyan-600 text-white font-bold rounded-xl">
+                  TRY AGAIN
+                </button>
+              </div>
+            ) : location ? (
+              <div className="p-6 bg-emerald-950/20 border border-emerald-500/30 rounded-xl space-y-2">
+                <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
+                <p className="text-emerald-300 font-bold text-sm">Location Secured</p>
+              </div>
+            ) : (
+              <div className="p-6 bg-cyan-950/20 border border-cyan-500/30 rounded-xl space-y-4">
+                <Navigation className="w-8 h-8 text-cyan-400 mx-auto animate-pulse" />
+                <p className="text-cyan-300 font-bold text-sm">Getting your current location...</p>
+                <p className="text-xs text-gray-400">Please allow location access if prompted.</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* STEP 4: CODE ENTRY */}
+        {step === 'CODE' && (
+          <div className="space-y-6 text-center">
+            <span className="text-[10px] text-gray-400 tracking-wider">Final Step</span>
+            <h2 className="text-lg font-bold text-white">Lab Verification Code</h2>
+            
+            <form onSubmit={handleVerifySubmit} className="space-y-5">
+              <div className="p-4 bg-white/5 border border-violet-500/30 rounded-2xl">
+                <p className="text-[10px] text-gray-400 mb-2">Enter the number displayed on the Lab PC:</p>
                 <input
-                  type="text"
-                  maxLength={4}
-                  required
-                  autoFocus
-                  value={enteredCode}
-                  onChange={(e) => setEnteredCode(e.target.value)}
+                  type="text" maxLength={4} required autoFocus
+                  value={enteredCode} onChange={(e) => setEnteredCode(e.target.value)}
                   placeholder="__"
-                  className="w-32 bg-slate-900 border-2 border-violet-500 rounded-xl px-4 py-3 text-center text-4xl font-black text-white tracking-widest focus:outline-none focus:border-cyan-400 font-mono shadow-inner mx-auto"
+                  className="w-32 bg-slate-900 border-2 border-violet-500 rounded-xl px-4 py-3 text-center text-4xl font-black text-white tracking-widest focus:outline-none focus:border-cyan-400 font-mono mx-auto"
                 />
-                <p className="text-[10px] text-gray-400 italic">
-                  Look at the number currently displayed beside the QR code on the Lab PC.
-                </p>
               </div>
 
-              <button
-                type="submit"
-                disabled={verifying || !enteredCode}
-                className="w-full py-3.5 rounded-xl bg-gradient-to-r from-emerald-600 via-indigo-600 to-cyan-500 text-white text-xs font-bold tracking-wider shadow-lg shadow-emerald-600/30 hover:opacity-95 transition-all flex items-center justify-center gap-2"
-              >
-                {verifying ? (
-                  <span>Verifying Code...</span>
-                ) : (
-                  <>
-                    <UserCheck className="w-4 h-4" />
-                    <span>VERIFY & MARK ATTENDANCE</span>
-                  </>
-                )}
+              <button type="submit" disabled={verifying || !enteredCode} className="w-full py-3.5 bg-gradient-to-r from-emerald-600 to-cyan-500 text-white text-xs font-bold rounded-xl">
+                {verifying ? 'Verifying...' : 'VERIFY & MARK ATTENDANCE'}
               </button>
             </form>
-
-            <div className="pt-2 text-center">
-              <Link to="/student/dashboard" className="text-[11px] text-gray-400 hover:text-white inline-flex items-center gap-1">
-                <ArrowLeft className="w-3.5 h-3.5" /> Back to Student Profile
-              </Link>
-            </div>
           </div>
         )}
 
-        {/* RESULT: ✓ ATTENDANCE MARKED SUCCESSFULLY */}
-        {verifyState === 'SUCCESS' && resultRecord && (
+        {/* STEP 5: RESULT */}
+        {step === 'RESULT' && (
           <div className="text-center space-y-6">
-            <div className="w-16 h-16 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 mx-auto flex items-center justify-center">
-              <CheckCircle2 className="w-10 h-10 text-emerald-400" />
-            </div>
+            
+            {/* SUCCESS */}
+            {verifyState === 'SUCCESS' && resultRecord && (
+              <>
+                <div className="w-16 h-16 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 mx-auto flex items-center justify-center">
+                  <CheckCircle2 className="w-10 h-10 text-emerald-400" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-emerald-400">✓ ATTENDANCE MARKED</h2>
+                </div>
+                <div className="glass-card p-4 text-left space-y-2 text-[10px] text-gray-200">
+                  <div className="flex justify-between border-b border-white/10 pb-1">
+                    <span className="text-gray-400">STUDENT:</span><span className="font-bold">{resultRecord.studentName}</span>
+                  </div>
+                  <div className="flex justify-between border-b border-white/10 pb-1">
+                    <span className="text-gray-400">DISTANCE:</span><span className="text-cyan-300 font-bold">{resultRecord.distance}m (Verified)</span>
+                  </div>
+                  <div className="flex justify-between border-b border-white/10 pb-1">
+                    <span className="text-gray-400">ENTRY TIME:</span><span className="text-white">{resultRecord.entryTime}</span>
+                  </div>
+                </div>
+                <button onClick={() => navigate('/student/dashboard')} className="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold text-xs">
+                  GO TO DASHBOARD
+                </button>
+              </>
+            )}
 
-            <div>
-              <h2 className="text-xl font-bold text-emerald-400">
-                ✓ ATTENDANCE MARKED SUCCESSFULLY
-              </h2>
-              <p className="text-xs text-gray-300 mt-1">
-                Your attendance has been verified & recorded in IdeaLab database.
-              </p>
-            </div>
+            {/* GEOFENCE FAILED */}
+            {verifyState === 'GEOFENCE_FAILED' && distanceInfo && (
+              <>
+                <div className="w-16 h-16 rounded-2xl bg-red-500/20 border border-red-500/40 mx-auto flex items-center justify-center">
+                  <MapPin className="w-10 h-10 text-red-400" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-red-400">❌ ATTENDANCE NOT ALLOWED</h2>
+                  <p className="text-xs text-gray-300 mt-2">You are outside the IdeaLab attendance area.</p>
+                </div>
+                <div className="p-3 bg-red-950/40 border border-red-500/30 rounded-xl text-left text-xs space-y-1">
+                  <div className="flex justify-between"><span className="text-gray-400">Your distance:</span><span className="text-white font-bold">{distanceInfo.distance} meters</span></div>
+                  <div className="flex justify-between"><span className="text-gray-400">Max allowed:</span><span className="text-white font-bold">{distanceInfo.allowed} meters</span></div>
+                </div>
+                <button onClick={() => setStep('LOCATION')} className="w-full py-3 bg-white/10 text-white rounded-xl font-bold text-xs">
+                  RETRY LOCATION VERIFICATION
+                </button>
+              </>
+            )}
 
-            <div className="glass-card p-4 text-left space-y-2.5 text-xs text-gray-200 border-white/10">
-              <div className="flex justify-between pb-2 border-b border-white/10">
-                <span className="text-gray-400">NAME:</span>
-                <span className="font-bold text-white">{resultRecord.studentName}</span>
-              </div>
-              <div className="flex justify-between pb-2 border-b border-white/10">
-                <span className="text-gray-400">STUDENT ID:</span>
-                <span className="text-violet-300 font-bold">{resultRecord.studentId}</span>
-              </div>
-              <div className="flex justify-between pb-2 border-b border-white/10">
-                <span className="text-gray-400">BRANCH:</span>
-                <span className="text-white">{resultRecord.branch}</span>
-              </div>
-              <div className="flex justify-between pb-2 border-b border-white/10">
-                <span className="text-gray-400">YEAR:</span>
-                <span className="text-white">{resultRecord.year}</span>
-              </div>
-              <div className="flex justify-between pb-2 border-b border-white/10">
-                <span className="text-gray-400">LAB:</span>
-                <span className="text-emerald-300 font-bold">{resultRecord.labName}</span>
-              </div>
-              <div className="flex justify-between pb-2 border-b border-white/10">
-                <span className="text-gray-400">ENTRY TIME:</span>
-                <span className="text-cyan-300 font-bold">{resultRecord.entryTime}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-400">DATE:</span>
-                <span className="text-gray-300">{resultRecord.date}</span>
-              </div>
-            </div>
+            {/* FACE NOT REGISTERED */}
+            {verifyState === 'FACE_NOT_REGISTERED' && (
+              <>
+                <div className="w-16 h-16 rounded-2xl bg-red-500/20 border border-red-500/40 mx-auto flex items-center justify-center">
+                  <ShieldAlert className="w-10 h-10 text-red-400" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-red-400">❌ FACE NOT REGISTERED</h2>
+                  <p className="text-xs text-gray-300 mt-2">{errorMessage}</p>
+                </div>
+                <Link to="/student" className="inline-block px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl font-bold w-full text-xs text-center mt-4">
+                  RETURN TO DASHBOARD
+                </Link>
+              </>
+            )}
 
-            <button
-              onClick={() => navigate('/student/dashboard')}
-              className="w-full py-3 bg-gradient-to-r from-emerald-600 to-cyan-600 text-white rounded-xl font-bold text-xs shadow-lg"
-            >
-              [ GO TO MY PROFILE ]
-            </button>
-          </div>
-        )}
+            {/* FACE MISMATCH */}
+            {verifyState === 'FACE_MISMATCH' && (
+              <>
+                <div className="w-16 h-16 rounded-2xl bg-red-500/20 border border-red-500/40 mx-auto flex items-center justify-center">
+                  <XCircle className="w-10 h-10 text-red-400" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-red-400">❌ FACE MISMATCH</h2>
+                  <p className="text-xs text-gray-300 mt-2">{errorMessage}</p>
+                </div>
+                <button onClick={() => setStep('CAMERA')} className="w-full mt-4 py-3 bg-red-600 hover:bg-red-500 text-white rounded-xl font-bold text-xs">
+                  TRY AGAIN (RETAKE PHOTO)
+                </button>
+              </>
+            )}
 
-        {/* RESULT: ❌ INVALID CODE */}
-        {verifyState === 'INVALID_CODE' && (
-          <div className="text-center space-y-6">
-            <div className="w-16 h-16 rounded-2xl bg-red-500/20 border border-red-500/40 mx-auto flex items-center justify-center">
-              <XCircle className="w-10 h-10 text-red-400" />
-            </div>
-            <div>
-              <h2 className="text-xl font-bold text-red-400">❌ INVALID CODE</h2>
-              <p className="text-xs text-gray-300 mt-2">
-                "{errorMessage || 'The number you entered does not match the number currently displayed on the IdeaLab screen.'}"
-              </p>
-            </div>
-            <button
-              onClick={() => { setVerifyState('IDLE'); setEnteredCode(''); }}
-              className="w-full py-3 bg-red-600 text-white rounded-xl font-bold text-xs shadow-lg"
-            >
-              TRY AGAIN
-            </button>
-          </div>
-        )}
+            {/* NO FACE DETECTED / MULTIPLE FACES */}
+            {(verifyState === 'NO_FACE_DETECTED' || verifyState === 'MULTIPLE_FACES_DETECTED') && (
+              <>
+                <div className="w-16 h-16 rounded-2xl bg-orange-500/20 border border-orange-500/40 mx-auto flex items-center justify-center">
+                  {verifyState === 'NO_FACE_DETECTED' ? <Camera className="w-10 h-10 text-orange-400" /> : <UserCheck className="w-10 h-10 text-orange-400" />}
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-orange-400">
+                    ⚠ {verifyState === 'NO_FACE_DETECTED' ? 'NO FACE DETECTED' : 'MULTIPLE FACES DETECTED'}
+                  </h2>
+                  <p className="text-xs text-gray-300 mt-2">{errorMessage}</p>
+                </div>
+                <button onClick={() => setStep('CAMERA')} className="w-full mt-4 py-3 bg-orange-600 hover:bg-orange-500 text-white rounded-xl font-bold text-xs">
+                  RETAKE PHOTO
+                </button>
+              </>
+            )}
 
-        {/* RESULT: ⏱ EXPIRED QR */}
-        {verifyState === 'EXPIRED' && (
-          <div className="text-center space-y-6">
-            <div className="w-16 h-16 rounded-2xl bg-amber-500/20 border border-amber-500/40 mx-auto flex items-center justify-center">
-              <Clock className="w-10 h-10 text-amber-400" />
-            </div>
-            <div>
-              <h2 className="text-xl font-bold text-amber-400">⏱ QR CODE EXPIRED</h2>
-              <p className="text-xs text-gray-300 mt-2">
-                This QR code or verification number is no longer valid. Please scan the latest QR displayed on the IdeaLab screen.
-              </p>
-            </div>
-            <button
-              onClick={() => navigate('/student/scan')}
-              className="w-full py-3 bg-amber-600 text-white rounded-xl font-bold text-xs shadow-lg"
-            >
-              SCAN AGAIN
-            </button>
-          </div>
-        )}
-
-        {/* RESULT: ✓ ALREADY MARKED */}
-        {verifyState === 'ALREADY' && (
-          <div className="text-center space-y-6">
-            <div className="w-16 h-16 rounded-2xl bg-violet-500/20 border border-violet-500/40 mx-auto flex items-center justify-center">
-              <CheckCircle2 className="w-10 h-10 text-violet-400" />
-            </div>
-            <div>
-              <h2 className="text-xl font-bold text-violet-300">✓ ALREADY MARKED</h2>
-              <p className="text-xs text-gray-300 mt-2">
-                You have already marked attendance for this session.
-              </p>
-            </div>
-            <button
-              onClick={() => navigate('/student/dashboard')}
-              className="w-full py-3 bg-violet-600 text-white rounded-xl font-bold text-xs shadow-lg"
-            >
-              [ GO TO PROFILE ]
-            </button>
-          </div>
-        )}
-
-        {/* RESULT: SESSION NOT ACTIVE / UNAUTHORIZED */}
-        {(verifyState === 'INACTIVE' || verifyState === 'UNAUTHORIZED') && (
-          <div className="text-center space-y-6">
-            <div className="w-16 h-16 rounded-2xl bg-cyan-500/20 border border-cyan-500/40 mx-auto flex items-center justify-center">
-              <ShieldAlert className="w-10 h-10 text-cyan-400" />
-            </div>
-            <div>
-              <h2 className="text-xl font-bold text-cyan-300">
-                {verifyState === 'INACTIVE' ? 'SESSION NOT ACTIVE' : 'UNAUTHORIZED'}
-              </h2>
-              <p className="text-xs text-gray-300 mt-2">
-                {errorMessage || 'The attendance session is closed or you are not eligible.'}
-              </p>
-            </div>
-            <button
-              onClick={() => navigate('/student/dashboard')}
-              className="w-full py-3 bg-cyan-600 text-white rounded-xl font-bold text-xs shadow-lg"
-            >
-              BACK TO DASHBOARD
-            </button>
+            {/* OTHER ERRORS (INVALID CODE / EXPIRED / ALREADY MARKED) */}
+            {['INVALID_CODE', 'EXPIRED', 'ALREADY', 'INACTIVE', 'UNAUTHORIZED'].includes(verifyState) && (
+              <>
+                <div className="w-16 h-16 rounded-2xl bg-red-500/20 border border-red-500/40 mx-auto flex items-center justify-center">
+                  {verifyState === 'ALREADY' ? <CheckCircle2 className="w-10 h-10 text-violet-400" /> : <XCircle className="w-10 h-10 text-red-400" />}
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-red-400">
+                    {verifyState === 'INVALID_CODE' && '❌ INVALID CODE'}
+                    {verifyState === 'EXPIRED' && '⏱ EXPIRED QR'}
+                    {verifyState === 'ALREADY' && '✓ ALREADY MARKED'}
+                    {(verifyState === 'INACTIVE' || verifyState === 'UNAUTHORIZED') && '❌ NOT ALLOWED'}
+                  </h2>
+                  <p className="text-xs text-gray-300 mt-2">{errorMessage}</p>
+                </div>
+                <button
+                  onClick={() => verifyState === 'INVALID_CODE' ? setStep('CODE') : navigate('/student/dashboard')}
+                  className="w-full py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl font-bold text-xs transition-all"
+                >
+                  {verifyState === 'INVALID_CODE' ? 'TRY AGAIN' : 'GO TO DASHBOARD'}
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>

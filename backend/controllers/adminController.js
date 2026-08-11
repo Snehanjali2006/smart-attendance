@@ -1,5 +1,8 @@
 const bcrypt = require('bcryptjs');
 const db = require('../config/database');
+const fs = require('fs');
+const path = require('path');
+const faceUtils = require('../utils/faceUtils');
 
 // Helper to log administrative actions
 function logAudit(adminUser, action, details) {
@@ -120,7 +123,7 @@ exports.getStudents = (req, res) => {
 };
 
 // CREATE Student
-exports.createStudent = (req, res) => {
+exports.createStudent = async (req, res) => {
   try {
     const {
       name,
@@ -140,6 +143,39 @@ exports.createStudent = (req, res) => {
 
     if (!name || !email || !studentId) {
       return res.status(400).json({ success: false, message: 'Name, Email, and SIC / Student ID are required.' });
+    }
+
+    let facePhotoUrl = null;
+    let faceEmbedding = null;
+
+    if (profilePhoto && profilePhoto.startsWith('data:image')) {
+      try {
+        const base64Data = profilePhoto.replace(/^data:image\/\w+;base64,/, "");
+        const imageBuffer = Buffer.from(base64Data, 'base64');
+        
+        const faceData = await faceUtils.detectSingleFace(imageBuffer);
+        faceEmbedding = JSON.stringify(faceData.embedding);
+
+        const photoFileName = `${studentId.trim().toUpperCase()}_face_${Date.now()}.jpg`;
+        const photoDir = path.join(__dirname, '..', 'public', 'uploads', 'face_registered');
+        if (!fs.existsSync(photoDir)) {
+          fs.mkdirSync(photoDir, { recursive: true });
+        }
+        
+        const photoPath = path.join(photoDir, photoFileName);
+        fs.writeFileSync(photoPath, imageBuffer);
+        
+        facePhotoUrl = `/uploads/face_registered/${photoFileName}`;
+      } catch (err) {
+        if (err.message === 'NO_FACE_DETECTED') {
+          return res.status(400).json({ success: false, message: 'No face detected in the registered photo. Please ensure the student is looking at the camera.' });
+        }
+        if (err.message === 'MULTIPLE_FACES_DETECTED') {
+          return res.status(400).json({ success: false, message: 'Multiple faces detected. Only the student should be in the frame.' });
+        }
+        console.error('Face processing error:', err);
+        return res.status(400).json({ success: false, message: 'Failed to process the registered face photo.' });
+      }
     }
 
     // Validate student category
@@ -178,9 +214,9 @@ exports.createStudent = (req, res) => {
     // Insert student profile with category
     db.prepare(`
       INSERT INTO students (
-        user_id, student_id, name, email, student_category, branch, department, year, semester, division, academic_year, phone, profile_photo, status
+        user_id, student_id, name, email, student_category, branch, department, year, semester, division, academic_year, phone, profile_photo, face_photo, face_embedding, face_registered_at, status
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       userRes.lastInsertRowid,
       cleanStudentId,
@@ -195,6 +231,9 @@ exports.createStudent = (req, res) => {
       academicYear || '2025-2026',
       phone || '',
       profilePhoto || '',
+      facePhotoUrl,
+      faceEmbedding,
+      facePhotoUrl ? new Date().toISOString() : null,
       userStatus
     );
 
@@ -740,6 +779,15 @@ exports.updateSettings = (req, res) => {
     if (tagline) {
       db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES ("tagline", ?)').run(String(tagline));
     }
+    if (req.body.idealabLatitude) {
+      db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES ("IDEALAB_LATITUDE", ?)').run(String(req.body.idealabLatitude));
+    }
+    if (req.body.idealabLongitude) {
+      db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES ("IDEALAB_LONGITUDE", ?)').run(String(req.body.idealabLongitude));
+    }
+    if (req.body.idealabAllowedRadius) {
+      db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES ("IDEALAB_ALLOWED_RADIUS", ?)').run(String(req.body.idealabAllowedRadius));
+    }
 
     logAudit(req.user, 'UPDATE_SETTINGS', 'Updated system settings');
 
@@ -750,6 +798,19 @@ exports.updateSettings = (req, res) => {
   }
 };
 
+// GET System Settings
+exports.getSettings = (req, res) => {
+  try {
+    const settingsRows = db.prepare('SELECT * FROM settings').all();
+    const settings = {};
+    settingsRows.forEach(row => {
+      settings[row.key] = row.value;
+    });
+    res.json({ success: true, settings });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Failed to fetch settings.' });
+  }
+};
 
 // DELETE Student (Admin)
 exports.deleteStudent = (req, res) => {
