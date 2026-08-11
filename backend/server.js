@@ -28,19 +28,12 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Seed Database with initial production data
-<<<<<<< HEAD
 if (process.env.SEED_DB && process.env.SEED_DB.toLowerCase() === 'true') {
   try {
     seedDatabase();
   } catch (err) {
     console.error('Error during DB seeding:', err);
   }
-=======
-try {
-  seedDatabase();
-} catch (err) {
-  console.error('Error during DB seeding:', err);
->>>>>>> cf753f4ff6dbdee6aac03d8225071450ced49492
 }
 
 // Socket.IO Room management

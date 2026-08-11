@@ -749,7 +749,7 @@ exports.updateSettings = (req, res) => {
     res.status(500).json({ success: false, message: 'Failed to update system settings.' });
   }
 };
-<<<<<<< HEAD
+
 
 // DELETE Student (Admin)
 exports.deleteStudent = (req, res) => {
@@ -818,5 +818,4 @@ exports.deleteTeacher = (req, res) => {
     res.status(500).json({ success: false, message: 'Failed to delete faculty.' });
   }
 };
-=======
->>>>>>> cf753f4ff6dbdee6aac03d8225071450ced49492
+

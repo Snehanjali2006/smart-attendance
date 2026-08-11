@@ -7,7 +7,6 @@ const { authorizeRoles } = require('../middleware/rbac');
 // All Admin routes require valid JWT token and ADMIN role
 router.use(authenticateToken, authorizeRoles('ADMIN'));
 
-<<<<<<< HEAD
 // Delete Student
 router.delete('/students/:id', adminController.deleteStudent);
 
@@ -15,8 +14,6 @@ router.delete('/students/:id', adminController.deleteStudent);
 router.delete('/teachers/:id', adminController.deleteTeacher);
 
 
-=======
->>>>>>> cf753f4ff6dbdee6aac03d8225071450ced49492
 router.get('/dashboard', adminController.getAdminDashboard);
 
 // Students Management
