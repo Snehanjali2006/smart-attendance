@@ -14,10 +14,14 @@ import {
   Check,
   Trash2,
   Camera,
-  ScanFace
+  ScanFace,
+  AlertTriangle,
+  Image as ImageIcon
 } from 'lucide-react';
 import CredentialCardModal from '../../components/CredentialCardModal';
 import StudentRegisterFace from './StudentRegisterFace';
+import DefaultAvatar from '../../components/DefaultAvatar';
+import PhotoUploadModal from '../../components/PhotoUploadModal';
 
 export default function AdminStudents() {
   const [students, setStudents] = useState([]);
@@ -42,6 +46,9 @@ export default function AdminStudents() {
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const [fetchError, setFetchError] = useState('');
+  
+  const [photoUploadTarget, setPhotoUploadTarget] = useState(null);
   
   // Face Registration Modal
   const [showFaceModal, setShowFaceModal] = useState(false);
@@ -67,16 +74,26 @@ export default function AdminStudents() {
 
   const fetchStudents = async () => {
     setLoading(true);
-    const query = new URLSearchParams();
-    if (search) query.append('search', search);
-    if (branchFilter) query.append('branch', branchFilter);
-    if (yearFilter) query.append('year', yearFilter);
-    if (statusFilter) query.append('status', statusFilter);
-    if (categoryFilter) query.append('category', categoryFilter);
+    setFetchError('');
+    try {
+      const query = new URLSearchParams();
+      if (search) query.append('search', search);
+      if (branchFilter) query.append('branch', branchFilter);
+      if (yearFilter) query.append('year', yearFilter);
+      if (statusFilter) query.append('status', statusFilter);
+      if (categoryFilter) query.append('category', categoryFilter);
 
-    const res = await apiRequest(`/admin/students?${query.toString()}`);
-    if (res.success) {
-      setStudents(res.students || []);
+      const res = await apiRequest(`/admin/students?${query.toString()}`);
+      if (res.success) {
+        setStudents(Array.isArray(res.students) ? res.students : []);
+      } else {
+        setFetchError(res.message || 'Failed to load students.');
+        setStudents([]);
+      }
+    } catch (err) {
+      console.error('Fetch students error:', err);
+      setFetchError('Unable to load students. Please try again.');
+      setStudents([]);
     }
     setLoading(false);
   };
@@ -357,6 +374,7 @@ export default function AdminStudents() {
           <table className="w-full text-left text-xs font-mono">
             <thead>
               <tr className="border-b border-white/10 bg-white/5 text-gray-400">
+                <th className="p-4">PHOTO</th>
                 <th className="p-4">STUDENT NAME</th>
                 <th className="p-4">CATEGORY</th>
                 <th className="p-4">SIC / STUDENT ID</th>
@@ -371,13 +389,27 @@ export default function AdminStudents() {
             <tbody className="divide-y divide-white/5">
               {loading ? (
                 <tr>
-                  <td colSpan="8" className="p-8 text-center text-gray-400">
+                  <td colSpan="10" className="p-8 text-center text-gray-400">
                     Loading student user records...
+                  </td>
+                </tr>
+              ) : fetchError ? (
+                <tr>
+                  <td colSpan="10" className="p-8 text-center">
+                    <div className="space-y-3">
+                      <p className="text-red-400 font-bold text-sm">⚠ {fetchError}</p>
+                      <button
+                        onClick={fetchStudents}
+                        className="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold rounded-xl"
+                      >
+                        [ RETRY ]
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ) : students.length === 0 ? (
                 <tr>
-                  <td colSpan="8" className="p-8 text-center text-gray-500">
+                  <td colSpan="10" className="p-8 text-center text-gray-500">
                     No student records found. Click "+ CREATE STUDENT ACCOUNT" to issue a profile.
                   </td>
                 </tr>
@@ -385,14 +417,16 @@ export default function AdminStudents() {
                 students.map((st) => (
                   <tr key={st.id} className="hover:bg-white/5 transition-all">
                     <td className="p-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-violet-600/30 border border-violet-500/40 flex items-center justify-center font-bold text-violet-300">
-                          {st.name.charAt(0)}
-                        </div>
-                        <div>
-                          <span className="font-bold text-white block">{st.name}</span>
-                          <span className="text-[10px] text-gray-400 block">{st.email}</span>
-                        </div>
+                      {st.profile_photo ? (
+                        <img src={st.profile_photo} alt={st.name} className="w-10 h-10 rounded-full object-cover border-2 border-violet-500/40" />
+                      ) : (
+                        <DefaultAvatar size={40} />
+                      )}
+                    </td>
+                    <td className="p-4">
+                      <div className="flex flex-col">
+                        <span className="font-bold text-white block">{st.name}</span>
+                        <span className="text-[10px] text-gray-400 block">{st.email}</span>
                       </div>
                     </td>
                     <td className="p-4">
@@ -448,6 +482,14 @@ export default function AdminStudents() {
                     </td>
                     <td className="p-4 text-right">
                       <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => setPhotoUploadTarget(st)}
+                          title={st.profile_photo ? "Change Photo" : "Add Photo"}
+                          className="p-1.5 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 font-mono flex items-center gap-1 text-[10px]"
+                        >
+                          <ImageIcon className="w-3.5 h-3.5" />
+                          <span>{st.profile_photo ? "Change" : "Add Photo"}</span>
+                        </button>
                         <button
                           onClick={() => handleEditClick(st)}
                           title="Edit Profile"
@@ -977,6 +1019,19 @@ export default function AdminStudents() {
         isOpen={showFaceModal}
         onClose={() => setShowFaceModal(false)}
         onSave={(dataUrl) => setForm(prev => ({ ...prev, profilePhoto: dataUrl }))}
+      />
+
+      {/* Photo Upload Modal */}
+      <PhotoUploadModal
+        isOpen={!!photoUploadTarget}
+        onClose={() => setPhotoUploadTarget(null)}
+        endpoint={`/admin/students/${photoUploadTarget?.id}/photo`}
+        title={`Upload Profile Photo - ${photoUploadTarget?.name}`}
+        onSuccess={(photoUrl) => {
+          setSuccessMsg('✓ Profile photo updated successfully!');
+          fetchStudents();
+          setTimeout(() => setSuccessMsg(''), 4000);
+        }}
       />
     </div>
   );

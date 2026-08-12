@@ -1,8 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/adminController');
+const reportController = require('../controllers/reportController');
 const { authenticateToken } = require('../middleware/auth');
 const { authorizeRoles } = require('../middleware/rbac');
+const upload = require('../middleware/upload');
 
 // All Admin routes require valid JWT token and ADMIN role
 router.use(authenticateToken, authorizeRoles('ADMIN'));
@@ -23,6 +25,7 @@ router.put('/students/:id', adminController.updateStudent);
 router.put('/students/:id/password', adminController.changeStudentPassword);
 router.post('/students/:id/reset-password', adminController.resetStudentPassword);
 router.post('/students/:id/status', adminController.updateStudentStatus);
+router.patch('/students/:id/photo', upload.single('photo'), adminController.updateStudentPhoto);
 
 // Faculty Management
 router.get('/teachers', adminController.getTeachers);
@@ -31,6 +34,7 @@ router.put('/teachers/:id', adminController.updateTeacher);
 router.put('/teachers/:id/password', adminController.changeTeacherPassword);
 router.post('/teachers/:id/reset-password', adminController.resetTeacherPassword);
 router.post('/teachers/:id/status', adminController.updateTeacherStatus);
+router.patch('/teachers/:id/photo', upload.single('photo'), adminController.updateFacultyPhoto);
 
 // Labs Management
 router.get('/labs', adminController.getLabs);
@@ -40,5 +44,8 @@ router.post('/labs', adminController.createLab);
 router.get('/audit-logs', adminController.getAuditLogs);
 router.get('/settings', adminController.getSettings);
 router.post('/settings', adminController.updateSettings);
+
+// Reports
+router.get('/reports', reportController.getAttendanceReport);
 
 module.exports = router;

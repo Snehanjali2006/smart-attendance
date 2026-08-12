@@ -40,3 +40,35 @@ export async function apiRequest(endpoint, method = 'GET', body = null) {
     };
   }
 }
+
+export async function apiUpload(endpoint, method = 'PATCH', formData) {
+  const token = localStorage.getItem('idealab_token');
+  const headers = {};
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  try {
+    const response = await fetch(`${BASE_URL}${endpoint}`, {
+      method,
+      headers,
+      body: formData
+    });
+    
+    const data = await response.json();
+
+    if (!response.ok && response.status === 401) {
+      localStorage.removeItem('idealab_token');
+      localStorage.removeItem('idealab_user');
+    }
+
+    return data;
+  } catch (err) {
+    console.error(`API Upload Error [${method} ${endpoint}]:`, err);
+    return {
+      success: false,
+      message: 'Network error during upload.'
+    };
+  }
+}

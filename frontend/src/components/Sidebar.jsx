@@ -46,6 +46,7 @@ export default function Sidebar() {
     { to: '/admin/teachers', label: 'Manage Teachers', icon: Users },
     { to: '/admin/labs', label: 'Manage Labs', icon: LayoutDashboard },
     { to: '/admin/projects', label: 'Manage Projects', icon: FolderGit2 },
+    { to: '/admin/reports', label: 'Reports & Export', icon: FileBarChart },
     { to: '/admin/settings', label: 'System Settings', icon: Settings }
   ];
 

@@ -12,9 +12,22 @@ import {
   PlusCircle,
   QrCode,
   Sparkles,
-  ArrowRight
+  ArrowRight,
+  TrendingUp,
+  PieChart as PieChartIcon
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell
+} from 'recharts';
 
 export default function AdminDashboard() {
   const [data, setData] = useState(null);
@@ -41,6 +54,11 @@ export default function AdminDashboard() {
     presentToday: 87,
     absentToday: 33
   };
+
+  const attendanceTrend = data?.chartData?.attendanceTrend || [];
+  const departmentDistribution = data?.chartData?.departmentDistribution || [];
+
+  const COLORS = ['#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444'];
 
   return (
     <div className="space-y-8 pb-12">
@@ -168,6 +186,86 @@ export default function AdminDashboard() {
             {stats.absentToday}
           </div>
           <span className="text-[10px] text-rose-300 font-mono mt-1 block">Unverified Students</span>
+        </div>
+      </div>
+
+      {/* Analytics Charts Section */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Attendance Trend Area Chart */}
+        <div className="glass-card p-6 border-white/10 lg:col-span-2">
+          <div className="flex items-center gap-2 mb-6">
+            <TrendingUp className="w-5 h-5 text-cyan-400" />
+            <h3 className="text-lg font-bold text-white">Attendance Trend (Last 7 Days)</h3>
+          </div>
+          <div className="h-[250px] w-full">
+            {attendanceTrend.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={attendanceTrend}>
+                  <defs>
+                    <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.8}/>
+                      <stop offset="95%" stopColor="#06b6d4" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="date" stroke="#6b7280" fontSize={10} tickMargin={10} />
+                  <YAxis stroke="#6b7280" fontSize={10} />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b', color: '#fff', fontSize: '12px' }}
+                    itemStyle={{ color: '#22d3ee' }}
+                  />
+                  <Area type="monotone" dataKey="count" stroke="#06b6d4" fillOpacity={1} fill="url(#colorCount)" name="Present Students" />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-full flex items-center justify-center text-gray-500 font-mono text-xs">
+                No attendance data available for the last 7 days.
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Department Distribution Pie Chart */}
+        <div className="glass-card p-6 border-white/10">
+          <div className="flex items-center gap-2 mb-6">
+            <PieChartIcon className="w-5 h-5 text-violet-400" />
+            <h3 className="text-lg font-bold text-white">Student Distribution</h3>
+          </div>
+          <div className="h-[250px] w-full flex items-center justify-center">
+            {departmentDistribution.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={departmentDistribution}
+                    innerRadius={60}
+                    outerRadius={80}
+                    paddingAngle={5}
+                    dataKey="value"
+                    stroke="none"
+                  >
+                    {departmentDistribution.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b', color: '#fff', fontSize: '12px', borderRadius: '8px' }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="text-gray-500 font-mono text-xs text-center">
+                No student data available.
+              </div>
+            )}
+          </div>
+          {/* Legend */}
+          <div className="mt-4 flex flex-wrap justify-center gap-3">
+            {departmentDistribution.map((entry, index) => (
+              <div key={index} className="flex items-center gap-1.5 text-[10px] font-mono text-gray-300 uppercase">
+                <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
+                <span>{entry.name} ({entry.value})</span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 

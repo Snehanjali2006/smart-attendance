@@ -17,6 +17,24 @@ import {
 } from 'lucide-react';
 import BackgroundParticles from '../components/BackgroundParticles';
 
+// Haversine Distance Calculation
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371000; // Earth radius in meters
+  const toRad = degrees => (degrees * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.round(R * c);
+}
+
+// TGPCET College coordinates
+const IDEA_LAB_LAT = 20.960705;
+const IDEA_LAB_LNG = 79.014667;
+const ALLOWED_RADIUS = 500;
+
 export default function AttendanceVerify() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -56,8 +74,16 @@ export default function AttendanceVerify() {
   });
 
   // Location State
-  const [location, setLocation] = useState(null); // { lat, lng }
-  const [locationError, setLocationError] = useState('');
+  const [locationStatus, setLocationStatus] = useState('IDLE'); 
+  const [locationInfo, setLocationInfo] = useState({ lat: null, lng: null, accuracy: null, distance: null });
+  const [locationErrorMsg, setLocationErrorMsg] = useState('');
+
+  // GPS Multi-Reading State
+  const [gpsReadings, setGpsReadings] = useState([]);
+  const [readingCount, setReadingCount] = useState(0);
+  const watchIdRef = useRef(null);
+  const scanTimerRef = useRef(null);
+  const gpsReadingsRef = useRef([]);
 
   // Code Entry State
   const [enteredCode, setEnteredCode] = useState('');
@@ -90,8 +116,25 @@ export default function AttendanceVerify() {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
       }
+      // Cleanup GPS watch and timer
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+      if (scanTimerRef.current) {
+        clearTimeout(scanTimerRef.current);
+        scanTimerRef.current = null;
+      }
     };
   }, []);
+
+  // Diagnostics for video element
+  useEffect(() => {
+    if (step === 'CAMERA') {
+      console.log("Camera component mounted / step changed to CAMERA");
+      console.log("Video element:", videoRef.current);
+    }
+  }, [step]);
 
   // LOGIN STEP
   const handleMobileLogin = async (e) => {
@@ -133,7 +176,7 @@ export default function AttendanceVerify() {
     setDebugInfo(prev => ({ ...prev, secureContext: isSecure ? 'YES' : 'NO', permission: 'REQUESTING...', trackState: 'NONE', capturedBytes: 0 }));
 
     if (!isSecure) {
-      setCameraError('Camera requires HTTPS or localhost.');
+      setCameraError(`Camera access requires HTTPS on mobile.\nCurrent connection: ${window.location.protocol.toUpperCase().replace(':', '')}\nRequired: HTTPS`);
       setDebugInfo(prev => ({ ...prev, permission: 'DENIED (Insecure)' }));
       return;
     }
@@ -144,11 +187,18 @@ export default function AttendanceVerify() {
       return;
     }
 
+    const video = videoRef.current;
+    if (!video) {
+      setCameraError('Video element not mounted.');
+      return;
+    }
+    console.log("Video element found before starting:", video);
+
     const constraints = forceFallback 
       ? { video: true, audio: false }
       : { 
           video: { 
-            facingMode: "user",
+            facingMode: { ideal: "user" },
             width: { ideal: 1280 },
             height: { ideal: 720 }
           }, 
@@ -156,18 +206,23 @@ export default function AttendanceVerify() {
         };
 
     try {
-      const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+      let mediaStream;
+      try {
+        mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+      } catch (err) {
+        if (!forceFallback && err.name !== 'NotAllowedError') {
+          console.log('First camera attempt failed, trying fallback...', err);
+          startCamera(true);
+          return;
+        }
+        throw err;
+      }
       setStream(mediaStream);
+      console.log("Camera stream obtained:", mediaStream);
 
       const tracks = mediaStream.getVideoTracks();
       const trackInfo = tracks.length > 0 ? `${tracks[0].readyState} (${tracks.length} tracks)` : 'NO TRACKS';
       setDebugInfo(prev => ({ ...prev, permission: 'GRANTED', streamActive: 'ACTIVE', trackState: trackInfo }));
-
-      const video = videoRef.current;
-      if (!video) {
-        setCameraError('Video element not found.');
-        return;
-      }
 
       video.srcObject = mediaStream;
 
@@ -175,6 +230,7 @@ export default function AttendanceVerify() {
       await new Promise((resolve, reject) => {
         video.onloadedmetadata = () => {
           video.play().then(() => {
+            console.log("Video playback started");
             const w = video.videoWidth;
             const h = video.videoHeight;
             setDebugInfo(prev => ({ ...prev, videoWidth: w, videoHeight: h, videoReady: (w > 0 && h > 0) ? 'METADATA' : 'NO' }));
@@ -207,17 +263,15 @@ export default function AttendanceVerify() {
       setDebugInfo(prev => ({ ...prev, permission: 'DENIED', streamActive: 'ERROR: ' + error.name }));
 
       if (error.name === 'NotAllowedError') {
-        errorMsg = 'Camera permission denied.';
+        errorMsg = 'Camera permission was denied. Please allow camera access.\n\nAndroid Chrome:\nSite Settings → Camera → Allow\n\niPhone Safari:\nWebsite Settings → Camera → Allow';
       } else if (error.name === 'NotFoundError') {
-        errorMsg = 'No camera found.';
+        errorMsg = 'No camera was found on this device.';
       } else if (error.name === 'NotReadableError') {
-        errorMsg = 'Camera is being used by another application.';
-      } else if (error.name === 'OverconstrainedError' && !forceFallback) {
-        console.log('Retrying camera without specific constraints...');
-        startCamera(true);
-        return;
+        errorMsg = 'The camera is currently being used by another application.';
+      } else if (error.name === 'OverconstrainedError') {
+        errorMsg = 'Preferred camera is unavailable. Trying another camera.';
       } else if (error.name === 'SecurityError') {
-        errorMsg = 'Camera requires a secure HTTPS connection.';
+        errorMsg = 'Camera access is blocked because this page is not secure.';
       } else if (error.name === 'AbortError') {
         errorMsg = 'Camera could not be started. Please try again.';
       }
@@ -318,32 +372,155 @@ export default function AttendanceVerify() {
       setStream(null);
     }
     setStep('LOCATION');
-    getLocation();
+    setLocationStatus('IDLE');
   };
 
-  // LOCATION STEP
-  const getLocation = () => {
-    setLocationError('');
-    setLocation(null);
+  // LOCATION STEP — Multi-reading GPS with watchPosition
+  const stopGpsScan = () => {
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
+    }
+    if (scanTimerRef.current) {
+      clearTimeout(scanTimerRef.current);
+      scanTimerRef.current = null;
+    }
+  };
 
-    if (!navigator.geolocation) {
-      setLocationError('Geolocation is not supported by your browser.');
+  const classifyLocation = (reading) => {
+    const distance = calculateDistance(reading.latitude, reading.longitude, IDEA_LAB_LAT, IDEA_LAB_LNG);
+    const accuracy = reading.accuracy;
+
+    setLocationInfo({ lat: reading.latitude, lng: reading.longitude, accuracy, distance });
+
+    // Clearly inside: even worst-case position is within radius
+    if (distance + accuracy < ALLOWED_RADIUS) {
+      setLocationStatus('INSIDE_LAB');
       return;
     }
 
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setLocation({
-          lat: position.coords.latitude,
-          lng: position.coords.longitude
-        });
-        setTimeout(() => setStep('CODE'), 1500); // Small delay to show "Got location"
-      },
-      (error) => {
-        setLocationError('Location access denied or unavailable. Please allow location permissions.');
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    // Clearly outside: even best-case position is outside radius
+    if (distance - accuracy > ALLOWED_RADIUS) {
+      setLocationStatus('OUTSIDE_LAB');
+      return;
+    }
+
+    // Boundary overlap — uncertain
+    setLocationStatus('UNCERTAIN');
+  };
+
+  const finalizeBestReading = () => {
+    stopGpsScan();
+    const readings = gpsReadingsRef.current;
+
+    if (readings.length === 0) {
+      setLocationErrorMsg('Could not obtain any GPS reading. Please ensure Location/GPS is enabled and try again.');
+      setLocationStatus('POSITION_UNAVAILABLE');
+      return;
+    }
+
+    // Select reading with smallest accuracy value (most precise)
+    const best = readings.reduce((bestSoFar, current) =>
+      current.accuracy < bestSoFar.accuracy ? current : bestSoFar
     );
+
+    classifyLocation(best);
+  };
+
+  const getLocation = () => {
+    // Reset state
+    stopGpsScan();
+    setLocationStatus('SCANNING');
+    setLocationErrorMsg('');
+    setLocationInfo({ lat: null, lng: null, accuracy: null, distance: null });
+    setGpsReadings([]);
+    setReadingCount(0);
+    gpsReadingsRef.current = [];
+
+    if (!navigator.geolocation) {
+      setLocationErrorMsg('Location is not supported by this browser.');
+      setLocationStatus('POSITION_UNAVAILABLE');
+      return;
+    }
+
+    if (!window.isSecureContext) {
+      setLocationErrorMsg('Location verification requires a secure HTTPS connection on mobile.');
+      setLocationStatus('POSITION_UNAVAILABLE');
+      return;
+    }
+
+    const MAX_READINGS = 5;
+    const MAX_SCAN_MS = 30000; // 30 seconds
+    const GOOD_ACCURACY_THRESHOLD = 30; // Stop early if accuracy is excellent
+
+    const handlePosition = (position) => {
+      const reading = {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        accuracy: position.coords.accuracy,
+        timestamp: Date.now()
+      };
+
+      gpsReadingsRef.current = [...gpsReadingsRef.current, reading];
+      const currentReadings = gpsReadingsRef.current;
+      setGpsReadings([...currentReadings]);
+      setReadingCount(currentReadings.length);
+
+      // Update display with best reading so far
+      const bestSoFar = currentReadings.reduce((best, cur) =>
+        cur.accuracy < best.accuracy ? cur : best
+      );
+      const dist = calculateDistance(bestSoFar.latitude, bestSoFar.longitude, IDEA_LAB_LAT, IDEA_LAB_LNG);
+      setLocationInfo({ lat: bestSoFar.latitude, lng: bestSoFar.longitude, accuracy: bestSoFar.accuracy, distance: dist });
+
+      // Stop early if we got excellent accuracy
+      if (bestSoFar.accuracy <= GOOD_ACCURACY_THRESHOLD) {
+        stopGpsScan();
+        classifyLocation(bestSoFar);
+        return;
+      }
+
+      // Stop after MAX_READINGS
+      if (currentReadings.length >= MAX_READINGS) {
+        finalizeBestReading();
+        return;
+      }
+    };
+
+    const handleError = (error) => {
+      // If we already have some readings, don't fail — we'll use what we have
+      if (gpsReadingsRef.current.length > 0) {
+        return;
+      }
+
+      stopGpsScan();
+      if (error.code === 1) {
+        setLocationStatus('PERMISSION_DENIED');
+      } else if (error.code === 2) {
+        setLocationErrorMsg('Your device could not determine your current location.\n\n• Turn ON GPS/Location\n• Move to an open area\n• Check phone location settings');
+        setLocationStatus('POSITION_UNAVAILABLE');
+      } else if (error.code === 3) {
+        setLocationErrorMsg('Location detection timed out. Please try again.');
+        setLocationStatus('TIMEOUT');
+      } else {
+        setLocationErrorMsg('An unknown error occurred while getting location.');
+        setLocationStatus('POSITION_UNAVAILABLE');
+      }
+    };
+
+    // Start watching position
+    watchIdRef.current = navigator.geolocation.watchPosition(
+      handlePosition,
+      handleError,
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 }
+    );
+
+    // Maximum scan duration — use best available after 30 seconds
+    scanTimerRef.current = setTimeout(() => {
+      if (watchIdRef.current !== null) {
+        finalizeBestReading();
+      }
+    }, MAX_SCAN_MS);
   };
 
   // FINAL SUBMIT (CODE STEP)
@@ -364,8 +541,8 @@ export default function AttendanceVerify() {
       token,
       code: enteredCode,
       deviceInfo: 'Mobile Web Browser',
-      latitude: location.lat,
-      longitude: location.lng,
+      latitude: locationInfo.lat,
+      longitude: locationInfo.lng,
       photo: photoDataUrl
     });
     
@@ -456,23 +633,14 @@ export default function AttendanceVerify() {
             </h2>
 
             {cameraError && (
-              <div className="p-3 bg-red-950/40 border border-red-500/30 text-red-400 text-xs rounded-xl">
+              <div className="p-3 bg-red-950/40 border border-red-500/30 text-red-400 text-xs rounded-xl whitespace-pre-line">
                 {cameraError}
-              </div>
-            )}
-
-            {/* START CAMERA BUTTON — only when no stream and no captured photo */}
-            {!photoDataUrl && !stream && (
-              <div className="text-center py-8">
-                <p className="text-xs text-gray-400 mb-4">Camera status: WAITING FOR START</p>
-                <button onClick={() => startCamera(false)} className="w-full py-3 bg-cyan-600 text-white font-bold rounded-xl flex items-center justify-center gap-2">
-                  <Camera className="w-5 h-5" /> [ START CAMERA ]
-                </button>
               </div>
             )}
 
             {/* DEBUG UI */}
             <div className="text-left bg-black/50 p-3 rounded-lg border border-gray-700 text-[10px] text-green-400 font-mono space-y-1">
+              <div>Video element: {videoRef.current ? 'CONNECTED' : 'NOT CONNECTED'}</div>
               <div>Camera permission: {debugInfo.permission}</div>
               <div>Camera stream: {debugInfo.streamActive}</div>
               <div>Video ready: {debugInfo.videoReady}</div>
@@ -483,33 +651,45 @@ export default function AttendanceVerify() {
               <div>Captured image size: {debugInfo.capturedBytes} bytes</div>
             </div>
 
-            {/* LIVE VIDEO — stream active, no captured photo yet */}
-            {!photoDataUrl && stream && (
+            {/* LIVE VIDEO CONTAINER — always rendered if no captured photo */}
+            {!photoDataUrl && (
               <div className="relative mt-4">
                 <video
                   ref={videoRef}
                   autoPlay
                   playsInline
                   muted
-                  style={{ width: '100%', height: 'auto', objectFit: 'cover' }}
-                  className="rounded-2xl border-2 border-violet-500/50 bg-black"
+                  style={{ width: '100%', maxWidth: '500px', height: 'auto', minHeight: '250px', objectFit: 'cover', display: 'block', background: '#000' }}
+                  className="rounded-2xl border-2 border-violet-500/50 mx-auto"
                 />
                 
-                {cameraReady ? (
-                  <div className="absolute top-2 left-2 bg-emerald-500/80 text-white text-[10px] font-bold px-2 py-1 rounded">✓ CAMERA READY</div>
+                {stream ? (
+                  <>
+                    {cameraReady ? (
+                      <div className="absolute top-2 left-2 bg-emerald-500/80 text-white text-[10px] font-bold px-2 py-1 rounded">✓ CAMERA READY</div>
+                    ) : (
+                      <div className="absolute top-2 left-2 bg-orange-500/80 text-white text-[10px] font-bold px-2 py-1 rounded animate-pulse">CAMERA STARTING...</div>
+                    )}
+                    
+                    <div className="mt-4 text-center">
+                      <button
+                        type="button"
+                        onClick={capturePhoto}
+                        disabled={!cameraReady}
+                        className={`py-3 px-6 font-bold text-xs rounded-full shadow-lg w-full ${cameraReady ? 'bg-white text-black hover:bg-gray-200' : 'bg-gray-600 text-gray-300 opacity-50 cursor-not-allowed'}`}
+                      >
+                        [ CAPTURE PHOTO ]
+                      </button>
+                    </div>
+                  </>
                 ) : (
-                  <div className="absolute top-2 left-2 bg-orange-500/80 text-white text-[10px] font-bold px-2 py-1 rounded animate-pulse">CAMERA STARTING...</div>
+                  <div className="mt-4 text-center py-4">
+                    <p className="text-xs text-gray-400 mb-4">Camera status: WAITING FOR START</p>
+                    <button type="button" onClick={() => startCamera(false)} className="w-full py-3 bg-cyan-600 text-white font-bold rounded-xl flex items-center justify-center gap-2">
+                      <Camera className="w-5 h-5" /> [ START CAMERA ]
+                    </button>
+                  </div>
                 )}
-                
-                <div className="mt-4 text-center">
-                  <button
-                    onClick={capturePhoto}
-                    disabled={!cameraReady}
-                    className={`py-3 px-6 font-bold text-xs rounded-full shadow-lg w-full ${cameraReady ? 'bg-white text-black hover:bg-gray-200' : 'bg-gray-600 text-gray-300 opacity-50 cursor-not-allowed'}`}
-                  >
-                    [ CAPTURE PHOTO ]
-                  </button>
-                </div>
               </div>
             )}
 
@@ -536,28 +716,151 @@ export default function AttendanceVerify() {
           <div className="space-y-6 text-center">
             <span className="text-[10px] text-gray-400 tracking-wider">Step 2 of 3</span>
             <h2 className="text-lg font-bold text-white flex items-center justify-center gap-2">
-              <MapPin className="w-5 h-5 text-cyan-400" /> Location Verification
+              <MapPin className="w-5 h-5 text-cyan-400" /> LOCATION VERIFICATION
             </h2>
 
-            {locationError ? (
+            {locationStatus === 'IDLE' && (
               <div className="space-y-4">
-                <div className="p-4 bg-red-950/40 border border-red-500/30 text-red-400 text-xs rounded-xl">
-                  {locationError}
+                <div className="p-4 bg-cyan-950/20 border border-cyan-500/30 rounded-xl">
+                  <p className="text-cyan-300 font-bold text-sm">Your location is required to mark attendance.</p>
                 </div>
                 <button onClick={getLocation} className="w-full py-3 bg-cyan-600 text-white font-bold rounded-xl">
-                  TRY AGAIN
+                  [ CHECK MY LOCATION ]
                 </button>
               </div>
-            ) : location ? (
-              <div className="p-6 bg-emerald-950/20 border border-emerald-500/30 rounded-xl space-y-2">
-                <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
-                <p className="text-emerald-300 font-bold text-sm">Location Secured</p>
-              </div>
-            ) : (
+            )}
+
+            {locationStatus === 'SCANNING' && (
               <div className="p-6 bg-cyan-950/20 border border-cyan-500/30 rounded-xl space-y-4">
                 <Navigation className="w-8 h-8 text-cyan-400 mx-auto animate-pulse" />
-                <p className="text-cyan-300 font-bold text-sm">Getting your current location...</p>
-                <p className="text-xs text-gray-400">Please allow location access if prompted.</p>
+                <p className="text-cyan-300 font-bold text-sm">📍 VERIFYING YOUR LOCATION</p>
+                <p className="text-xs text-gray-400">Finding your current GPS location...</p>
+                
+                <div className="p-3 bg-black/40 border border-cyan-500/20 rounded-lg text-xs space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Reading:</span>
+                    <span className="text-cyan-300 font-bold">{readingCount}/5</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">GPS accuracy:</span>
+                    <span className="text-cyan-300 font-bold">
+                      {locationInfo.accuracy !== null ? `${Math.round(locationInfo.accuracy)} m` : 'Waiting...'}
+                    </span>
+                  </div>
+                  {locationInfo.accuracy !== null && locationInfo.accuracy > 200 && (
+                    <p className="text-orange-300 text-[10px] mt-1">
+                      GPS accuracy is currently low. We are trying to get a better location...
+                    </p>
+                  )}
+                </div>
+
+                {/* Progress bar */}
+                <div className="w-full bg-gray-700/50 rounded-full h-1.5">
+                  <div 
+                    className="bg-cyan-500 h-1.5 rounded-full transition-all duration-500" 
+                    style={{ width: `${Math.min((readingCount / 5) * 100, 100)}%` }}
+                  />
+                </div>
+                <p className="text-[10px] text-gray-500">Please wait for GPS to stabilize...</p>
+              </div>
+            )}
+
+            {locationStatus === 'PERMISSION_DENIED' && (
+              <div className="space-y-4">
+                <div className="p-4 bg-red-950/40 border border-red-500/30 rounded-xl">
+                  <h3 className="text-red-400 font-bold text-sm mb-2">📍 Location Permission Required</h3>
+                  <p className="text-red-300 text-xs">Please allow location access for this website.</p>
+                  <p className="text-red-300 text-xs mt-2">Please allow Location permission in your browser settings. Then return to this page and try again.</p>
+                </div>
+                <button onClick={getLocation} className="w-full py-3 bg-red-600 text-white font-bold rounded-xl">
+                  [ TRY AGAIN ]
+                </button>
+              </div>
+            )}
+
+            {(locationStatus === 'POSITION_UNAVAILABLE' || locationStatus === 'TIMEOUT') && (
+              <div className="space-y-4">
+                <div className="p-4 bg-orange-950/40 border border-orange-500/30 text-orange-300 text-xs rounded-xl whitespace-pre-line text-left">
+                  {locationErrorMsg}
+                </div>
+                <button onClick={getLocation} className="w-full py-3 bg-orange-600 text-white font-bold rounded-xl">
+                  [ TRY AGAIN ]
+                </button>
+              </div>
+            )}
+
+            {locationStatus === 'UNCERTAIN' && (
+              <div className="space-y-4">
+                <div className="p-4 bg-black/50 border border-gray-700 rounded-xl text-left text-xs space-y-2">
+                  <div className="flex justify-between border-b border-gray-700 pb-1">
+                    <span className="text-gray-400">Status:</span>
+                    <span className="text-white font-bold">📍 Location detected</span>
+                  </div>
+                  <div className="flex justify-between border-b border-gray-700 pb-1">
+                    <span className="text-gray-400">GPS accuracy:</span>
+                    <span className="text-white font-bold">{Math.round(locationInfo.accuracy)} m</span>
+                  </div>
+                  <div className="flex justify-between border-b border-gray-700 pb-1">
+                    <span className="text-gray-400">Distance from TGPCET:</span>
+                    <span className="text-white font-bold">{locationInfo.distance} m</span>
+                  </div>
+                  <div className="flex justify-between border-b border-gray-700 pb-1">
+                    <span className="text-gray-400">Allowed distance:</span>
+                    <span className="text-white font-bold">{ALLOWED_RADIUS} m</span>
+                  </div>
+                </div>
+                <div className="p-4 bg-amber-950/40 border border-amber-500/30 rounded-xl">
+                  <h3 className="text-amber-400 font-bold text-sm">📍 Location accuracy is not sufficient</h3>
+                  <p className="text-amber-300 text-xs mt-1">Your location is near the attendance boundary. Please wait for a more accurate GPS reading.</p>
+                </div>
+                <button onClick={getLocation} className="w-full py-3 bg-amber-600 text-white font-bold rounded-xl">
+                  [ TRY AGAIN ]
+                </button>
+              </div>
+            )}
+
+            {(locationStatus === 'INSIDE_LAB' || locationStatus === 'OUTSIDE_LAB') && (
+              <div className="space-y-4">
+                <div className="p-4 bg-black/50 border border-gray-700 rounded-xl text-left text-xs space-y-2">
+                  <div className="flex justify-between border-b border-gray-700 pb-1">
+                    <span className="text-gray-400">Status:</span>
+                    <span className="text-white font-bold">✓ Location detected</span>
+                  </div>
+                  <div className="flex justify-between border-b border-gray-700 pb-1">
+                    <span className="text-gray-400">GPS accuracy:</span>
+                    <span className="text-white font-bold">{Math.round(locationInfo.accuracy)} m</span>
+                  </div>
+                  <div className="flex justify-between border-b border-gray-700 pb-1">
+                    <span className="text-gray-400">Distance from TGPCET:</span>
+                    <span className="text-white font-bold">{locationInfo.distance} m</span>
+                  </div>
+                  <div className="flex justify-between border-b border-gray-700 pb-1">
+                    <span className="text-gray-400">Allowed distance:</span>
+                    <span className="text-white font-bold">{ALLOWED_RADIUS} m</span>
+                  </div>
+                </div>
+
+                {locationStatus === 'INSIDE_LAB' ? (
+                  <>
+                    <div className="p-4 bg-emerald-950/40 border border-emerald-500/30 rounded-xl">
+                      <h3 className="text-emerald-400 font-bold text-sm">✓ YOU ARE PRESENT IN TGPCET</h3>
+                      <p className="text-emerald-300 text-xs mt-1">You can continue with attendance verification.</p>
+                    </div>
+                    <button onClick={() => setStep('CODE')} className="w-full py-3 bg-emerald-600 text-white font-bold rounded-xl">
+                      [ CONTINUE ]
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div className="p-4 bg-red-950/40 border border-red-500/30 rounded-xl">
+                      <h3 className="text-red-400 font-bold text-sm">❌ YOU ARE NOT PRESENT IN TGPCET</h3>
+                      <p className="text-red-300 text-xs mt-1">Move within 500 meters of TGPCET.</p>
+                    </div>
+                    <button onClick={getLocation} className="w-full py-3 bg-white/10 text-white font-bold rounded-xl">
+                      [ CHECK LOCATION AGAIN ]
+                    </button>
+                  </>
+                )}
               </div>
             )}
           </div>

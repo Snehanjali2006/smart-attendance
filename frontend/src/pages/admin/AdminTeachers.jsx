@@ -11,9 +11,12 @@ import {
   Building2,
   Zap,
   X,
-  Trash2
+  Trash2,
+  Image as ImageIcon
 } from 'lucide-react';
 import CredentialCardModal from '../../components/CredentialCardModal';
+import DefaultAvatar from '../../components/DefaultAvatar';
+import PhotoUploadModal from '../../components/PhotoUploadModal';
 
 export default function AdminTeachers() {
   const [teachers, setTeachers] = useState([]);
@@ -36,6 +39,8 @@ export default function AdminTeachers() {
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+
+  const [photoUploadTarget, setPhotoUploadTarget] = useState(null);
 
   // Form state
   const [form, setForm] = useState({
@@ -312,6 +317,7 @@ export default function AdminTeachers() {
           <table className="w-full text-left text-xs font-mono">
             <thead>
               <tr className="border-b border-white/10 bg-white/5 text-gray-400">
+                <th className="p-4">PHOTO</th>
                 <th className="p-4">FACULTY NAME</th>
                 <th className="p-4">FACULTY ID</th>
                 <th className="p-4">DEPARTMENT & DESIGNATION</th>
@@ -324,13 +330,13 @@ export default function AdminTeachers() {
             <tbody className="divide-y divide-white/5">
               {loading ? (
                 <tr>
-                  <td colSpan="7" className="p-8 text-center text-gray-400">
+                  <td colSpan="8" className="p-8 text-center text-gray-400">
                     Loading faculty records...
                   </td>
                 </tr>
               ) : teachers.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="p-8 text-center text-gray-500">
+                  <td colSpan="8" className="p-8 text-center text-gray-500">
                     No faculty accounts found. Click "+ CREATE FACULTY ACCOUNT" to add an instructor.
                   </td>
                 </tr>
@@ -338,14 +344,16 @@ export default function AdminTeachers() {
                 teachers.map((t) => (
                   <tr key={t.id} className="hover:bg-white/5 transition-all">
                     <td className="p-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-indigo-600/30 border border-indigo-500/40 flex items-center justify-center font-bold text-indigo-300">
-                          {t.name.charAt(0)}
-                        </div>
-                        <div>
-                          <span className="font-bold text-white block">{t.name}</span>
-                          <span className="text-[10px] text-gray-400 block">{t.email}</span>
-                        </div>
+                      {t.profile_photo ? (
+                        <img src={t.profile_photo} alt={t.name} className="w-10 h-10 rounded-full object-cover border-2 border-indigo-500/40" />
+                      ) : (
+                        <DefaultAvatar size={40} />
+                      )}
+                    </td>
+                    <td className="p-4">
+                      <div className="flex flex-col">
+                        <span className="font-bold text-white block">{t.name}</span>
+                        <span className="text-[10px] text-gray-400 block">{t.email}</span>
                       </div>
                     </td>
                     <td className="p-4">
@@ -378,6 +386,14 @@ export default function AdminTeachers() {
                     </td>
                     <td className="p-4 text-right">
                       <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => setPhotoUploadTarget(t)}
+                          title={t.profile_photo ? "Change Photo" : "Add Photo"}
+                          className="p-1.5 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 font-mono flex items-center gap-1 text-[10px]"
+                        >
+                          <ImageIcon className="w-3.5 h-3.5" />
+                          <span>{t.profile_photo ? "Change" : "Add Photo"}</span>
+                        </button>
                         <button
                           onClick={() => handleEditClick(t)}
                           title="Edit Profile"
@@ -823,6 +839,18 @@ export default function AdminTeachers() {
         </div>
       )}
 
+      {/* Photo Upload Modal */}
+      <PhotoUploadModal
+        isOpen={!!photoUploadTarget}
+        onClose={() => setPhotoUploadTarget(null)}
+        endpoint={`/admin/faculty/${photoUploadTarget?.id}/photo`}
+        title={`Upload Profile Photo - ${photoUploadTarget?.name}`}
+        onSuccess={(photoUrl) => {
+          setSuccessMsg('✓ Faculty photo updated successfully!');
+          fetchTeachers();
+          setTimeout(() => setSuccessMsg(''), 4000);
+        }}
+      />
 
       {/* Credential Card Display Modal */}
       {createdCredentials && (

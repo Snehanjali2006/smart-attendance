@@ -118,8 +118,8 @@ exports.verifyAndMarkAttendance = async (req, res) => {
       return row ? row.value : defaultVal;
     };
 
-    const labLat = parseFloat(getSetting('IDEALAB_LATITUDE', '20.998711'));
-    const labLng = parseFloat(getSetting('IDEALAB_LONGITUDE', '79.553924'));
+    const labLat = parseFloat(getSetting('IDEALAB_LATITUDE', '20.960705'));
+    const labLng = parseFloat(getSetting('IDEALAB_LONGITUDE', '79.014667'));
     const allowedRadius = parseFloat(getSetting('IDEALAB_ALLOWED_RADIUS', '500'));
 
     const distance = calculateDistance(lat, lng, labLat, labLng);
@@ -128,7 +128,7 @@ exports.verifyAndMarkAttendance = async (req, res) => {
       return res.status(400).json({
         success: false,
         errorCode: 'OUTSIDE_GEOFENCE',
-        message: 'You are outside the IdeaLab attendance area.',
+        message: 'You are outside the TGPCET attendance area.',
         distance,
         allowedRadius
       });

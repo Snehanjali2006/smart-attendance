@@ -37,6 +37,7 @@ import AdminTeachers from './pages/admin/AdminTeachers';
 import AdminLabs from './pages/admin/AdminLabs';
 import AdminProjects from './pages/admin/AdminProjects';
 import AdminSettings from './pages/admin/AdminSettings';
+import AdminReports from './pages/admin/AdminReports';
 
 function ProtectedLayout() {
   const { user, loading, clearForcePasswordChange } = useAuth();
@@ -146,6 +147,7 @@ export default function App() {
                 <Route path="/admin/teachers" element={<AdminTeachers />} />
                 <Route path="/admin/labs" element={<AdminLabs />} />
                 <Route path="/admin/projects" element={<AdminProjects />} />
+                <Route path="/admin/reports" element={<AdminReports />} />
                 <Route path="/admin/settings" element={<AdminSettings />} />
               </Route>
             </Route>

@@ -880,3 +880,59 @@ exports.deleteTeacher = (req, res) => {
   }
 };
 
+// --- PHOTO UPLOAD CONTROLLERS ---
+
+exports.updateStudentPhoto = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded.' });
+
+    const photoPath = `/uploads/profile_photos/${req.file.filename}`;
+
+    const old = db.prepare('SELECT profile_photo FROM students WHERE id = ?').get(id);
+    if (old && old.profile_photo && old.profile_photo.startsWith('/uploads/profile_photos/')) {
+      const fs = require('fs');
+      const path = require('path');
+      const oldPath = path.join(__dirname, '..', 'public', old.profile_photo);
+      if (fs.existsSync(oldPath)) {
+        fs.unlinkSync(oldPath);
+      }
+    }
+
+    db.prepare('UPDATE students SET profile_photo = ? WHERE id = ?').run(photoPath, id);
+
+    logAudit(req.user, 'UPDATE_STUDENT_PHOTO', `Updated profile photo for student ID ${id}`);
+    res.json({ success: true, message: 'Photo updated.', photo: photoPath });
+  } catch (err) {
+    console.error('Update student photo error:', err);
+    res.status(500).json({ success: false, message: 'Failed to update student photo.' });
+  }
+};
+
+exports.updateFacultyPhoto = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded.' });
+
+    const photoPath = `/uploads/profile_photos/${req.file.filename}`;
+
+    const old = db.prepare('SELECT profile_photo FROM teachers WHERE id = ?').get(id);
+    if (old && old.profile_photo && old.profile_photo.startsWith('/uploads/profile_photos/')) {
+      const fs = require('fs');
+      const path = require('path');
+      const oldPath = path.join(__dirname, '..', 'public', old.profile_photo);
+      if (fs.existsSync(oldPath)) {
+        fs.unlinkSync(oldPath);
+      }
+    }
+
+    db.prepare('UPDATE teachers SET profile_photo = ? WHERE id = ?').run(photoPath, id);
+
+    logAudit(req.user, 'UPDATE_FACULTY_PHOTO', `Updated profile photo for faculty ID ${id}`);
+    res.json({ success: true, message: 'Photo updated.', photo: photoPath });
+  } catch (err) {
+    console.error('Update faculty photo error:', err);
+    res.status(500).json({ success: false, message: 'Failed to update faculty photo.' });
+  }
+};
+

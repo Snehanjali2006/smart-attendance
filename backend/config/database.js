@@ -175,8 +175,8 @@ function initDatabase() {
 
   // Settings initial seed
   db.exec(`
-    INSERT OR IGNORE INTO settings (key, value) VALUES ('IDEALAB_LATITUDE', '20.998711');
-    INSERT OR IGNORE INTO settings (key, value) VALUES ('IDEALAB_LONGITUDE', '79.553924');
+    INSERT OR IGNORE INTO settings (key, value) VALUES ('IDEALAB_LATITUDE', '20.960705');
+    INSERT OR IGNORE INTO settings (key, value) VALUES ('IDEALAB_LONGITUDE', '79.014667');
     INSERT OR IGNORE INTO settings (key, value) VALUES ('IDEALAB_ALLOWED_RADIUS', '500');
     INSERT OR IGNORE INTO settings (key, value) VALUES ('FACE_MATCH_THRESHOLD', '0.6');
   `);

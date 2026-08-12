@@ -5,8 +5,8 @@ import BackgroundParticles from '../../components/BackgroundParticles';
 
 export default function AdminSettings() {
   const [settings, setSettings] = useState({
-    idealabLatitude: '20.998711',
-    idealabLongitude: '79.553924',
+    idealabLatitude: '20.960705',
+    idealabLongitude: '79.014667',
     idealabAllowedRadius: '500'
   });
   const [loading, setLoading] = useState(true);
@@ -22,8 +22,8 @@ export default function AdminSettings() {
     const res = await apiRequest('/admin/settings');
     if (res.success && res.settings) {
       setSettings({
-        idealabLatitude: res.settings.IDEALAB_LATITUDE || '20.998711',
-        idealabLongitude: res.settings.IDEALAB_LONGITUDE || '79.553924',
+        idealabLatitude: res.settings.IDEALAB_LATITUDE || '20.960705',
+        idealabLongitude: res.settings.IDEALAB_LONGITUDE || '79.014667',
         idealabAllowedRadius: res.settings.IDEALAB_ALLOWED_RADIUS || '500'
       });
     }
@@ -80,7 +80,7 @@ export default function AdminSettings() {
             Attendance Location
           </h2>
           <p className="text-xs text-gray-400 font-mono">
-            Set the official GPS coordinates of the IdeaLab. Students must be within the allowed radius of this location to mark attendance.
+            Set the official GPS coordinates of TGPCET College. Students must be within the allowed radius of this location to mark attendance.
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
